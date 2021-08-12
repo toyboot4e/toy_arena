@@ -20,7 +20,7 @@ let index: Index<Entity> = entities.insert(Entity { hp: 0 });
 * [thunderdome](https://docs.rs/thunderdome/latest)
 */
 
-use std::{fmt::Debug, hash::Hash, iter, marker::PhantomData, ops};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData, ops};
 
 use derivative::Derivative;
 use nonmax::*;
@@ -35,25 +35,29 @@ replaced by another value or id it's still there. Generation can be created [`Pe
 */
 #[derive(Derivative)]
 #[derivative(
-    Default(bound = "G: Default"),
-    Debug(bound = "T: Debug, G: Debug, <G as Gen>::PerSlot: Debug"),
-    Clone(bound = "T: Clone, G: Clone, <G as Gen>::PerSlot: Clone"),
-    PartialEq(bound = "T: PartialEq, G: PartialEq, <G as Gen>::PerSlot: PartialEq"),
-    Eq(bound = "T: PartialEq, G: Eq, <G as Gen>::PerSlot: PartialEq"),
-    Hash(bound = "T: Hash, G: Hash, <G as Gen>::PerSlot: Hash")
+    Default(bound = "<G as Gen>::PerArena: Default"),
+    Debug(bound = "T: Debug, <G as Gen>::PerArena: Debug, <G as Gen>::PerSlot: Debug"),
+    Clone(bound = "T: Clone, <G as Gen>::PerArena: Clone, <G as Gen>::PerSlot: Clone"),
+    PartialEq(
+        bound = "T: PartialEq, <G as Gen>::PerArena: PartialEq, <G as Gen>::PerSlot: PartialEq"
+    ),
+    Eq(bound = "T: PartialEq, <G as Gen>::PerArena: Eq, <G as Gen>::PerSlot: PartialEq"),
+    Hash(bound = "T: Hash, <G as Gen>::PerArena: Hash, <G as Gen>::PerSlot: Hash")
 )]
 pub struct Arena<T, G: Gen = PerSlot> {
     data: Vec<Entry<T, G>>,
     /// Free slots
     free: Vec<Slot>,
     len: Slot,
-    gen: G,
+    /// Per-arena generator. Zero-sized if we use [`PerArena`]
+    gen: G::PerArena,
 }
 
-// `dervative`:
-// We went to implement std traits only when all the fields implement that trait.
-// We can add `where field: Trait` bound for each field, but it exposes `Entry` type to the public
-// API, so we added indirect bounds above
+/* `dervative`:
+We went to implement std traits only when all the fields implement that trait.
+We can add `where field: Trait` bound for each field, but it exposes `Entry` type to the public
+API, so we added indirect bounds above
+*/
 
 /// Index of an item in the belonging [`Arena`]
 #[derive(Derivative)]
@@ -90,7 +94,6 @@ impl<T, G: Gen> Index<T, G> {
     Hash(bound = "Option<T>: Hash, <G as Gen>::PerSlot: Hash")
 )]
 struct Entry<T, G: Gen> {
-    /// Item positions are fixed.
     data: Option<T>,
     /// It's `()` if the generator is per-arena.
     gen: G::PerSlot,
@@ -112,12 +115,15 @@ impl Slot {
     }
 }
 
-/// Generator of generations. Availables: per-slot or per-arena [`NonMaxU8`], [`NonMaxU16`],
-/// [`NonMaxU32`] and [`NonMaxU32`],
+/**
+Generator of generations. Availables: per-slot or per-arena [`NonMaxU8`], [`NonMaxU16`],
+[`NonMaxU32`] and [`NonMaxU32`],
+*/
 pub trait Gen {
     type Generation;
+    type PerArena;
     type PerSlot;
-    fn next(per_arena: &mut Self, per_slot: &mut Self::PerSlot) -> Self::Generation;
+    fn next(per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation;
 }
 
 /// Per-slot generation generator
@@ -131,15 +137,16 @@ pub struct PerSlot<G = NonMaxU32> {
 #[derive(Derivative)]
 #[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct PerArena<G = NonMaxU32> {
-    gen: G,
+    _ty: PhantomData<G>,
 }
 
 macro_rules! impl_generators {
     ($ty:ident) => {
         impl Gen for PerSlot<$ty> {
             type Generation = $ty;
-            type PerSlot = $ty;
-            fn next(_per_arena: &mut Self, per_slot: &mut Self::PerSlot) -> Self::Generation {
+            type PerArena = ();
+            type PerSlot = Self::Generation;
+            fn next(_per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation {
                 let raw = per_slot.get();
                 let new = $ty::new(raw + 1).expect("generation exceed");
                 *per_slot = new;
@@ -149,11 +156,12 @@ macro_rules! impl_generators {
 
         impl Gen for PerArena<$ty> {
             type Generation = $ty;
+            type PerArena = Self::Generation;
             type PerSlot = ();
-            fn next(per_arena: &mut Self, _per_slot: &mut Self::PerSlot) -> Self::Generation {
-                let raw = per_arena.gen.get();
+            fn next(per_arena: &mut Self::PerArena, _per_slot: &mut Self::PerSlot) -> Self::Generation {
+                let raw = per_arena.get();
                 let new = $ty::new(raw + 1).expect("generation exceed");
-                per_arena.gen = new;
+                *per_arena = new;
                 new
             }
         }
@@ -178,14 +186,18 @@ impl<T, G: Gen> Arena<T, G> {
     }
 }
 
-impl<T, G: Gen + Default> Arena<T, G> {
-    pub fn new() -> Self {
+impl<T, G: Gen> Arena<T, G> {
+    pub fn new() -> Self
+    where
+        G::PerArena: Default,
+    {
         Self::default()
     }
 
     pub fn with_capacity(cap: usize) -> Self
     where
         G::PerSlot: Default,
+        G::PerArena: Default,
     {
         assert!(cap < RawSlot::MAX as usize, "Too big arena");
 
@@ -202,7 +214,7 @@ impl<T, G: Gen + Default> Arena<T, G> {
             data,
             free,
             len: Slot::default(),
-            gen: G::default(),
+            gen: G::PerArena::default(),
         }
     }
 }
