@@ -1,19 +1,8 @@
 /*!
 Extensible generational arena
 
-```
-use toy_arena::{Arena, Index};
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct Entity {
-    pub hp: usize,
-}
-
-let mut entities = Arena::<Entity>::with_capacity(1);
-assert!(entities.len() == 0);
-assert!(entities.capacity() == 1);
-let index: Index<Entity> = entities.insert(Entity { hp: 0 });
-```
+* Goals: Tiny code.
+* Non-goals: Extream memory efficiency.
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -29,13 +18,12 @@ use nonmax::*;
 Generational arena
 
 It's basically a [`Vec`], but with fixed item positions; arena operations don't move items. And
-more, each item in the arena is given "generation" value, which identifies if the value has been
-replaced by another value or id it's still there. Generation can be created [`PerSlot`] or
-[`PerArena`].
+more, each item in the arena is given "generation" value, which identifies the original value from
+another values (and see if the original value is already replaced or not). Generation can be created
+[`PerSlot`] or [`PerArena`].
 */
 #[derive(Derivative)]
 #[derivative(
-    Default(bound = "<G as Gen>::PerArena: Default"),
     Debug(bound = "T: Debug, <G as Gen>::PerArena: Debug, <G as Gen>::PerSlot: Debug"),
     Clone(bound = "T: Clone, <G as Gen>::PerArena: Clone, <G as Gen>::PerSlot: Clone"),
     PartialEq(
@@ -46,7 +34,7 @@ replaced by another value or id it's still there. Generation can be created [`Pe
 )]
 pub struct Arena<T, G: Gen = PerSlot> {
     data: Vec<Entry<T, G>>,
-    /// Free slots
+    /// All of free slots
     free: Vec<Slot>,
     len: Slot,
     /// Per-arena generator. Zero-sized if we use [`PerArena`]
@@ -59,7 +47,13 @@ We can add `where field: Trait` bound for each field, but it exposes `Entry` typ
 API, so we added indirect bounds above
 */
 
-/// Index of an item in the belonging [`Arena`]
+/**
+Index of an item in the belonging arena: [`Slot`] + [`Generation`](Gen::Generation)
+
+Item in the [`Arena`] is located by [`Slot`] and identified by their generation. If the item at a
+slot is already replaced by another value, the generation of the [`Entry`] is already incremented,
+so we can identify the original item from replaced item.
+*/
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = " <G as Gen>::Generation: Debug"),
@@ -109,31 +103,34 @@ pub struct Slot {
 
 impl Slot {
     fn inc(&mut self) {
-        self.raw
+        self.raw = self
+            .raw
             .checked_add(1)
             .unwrap_or_else(|| panic!("arena slot overflow"));
     }
 }
 
 /**
-Generator of generations. Availables: per-slot or per-arena [`NonMaxU8`], [`NonMaxU16`],
-[`NonMaxU32`] and [`NonMaxU32`],
+Generator of generations [`PerSlot`] or [`PerArena`], backed by an unsigned [`nonmax`] type
 */
 pub trait Gen {
+    /// Generation, one of the [`nonmax`] types
     type Generation;
+    /// Per-arena generation generator
     type PerArena;
+    /// Per-slot generation generator
     type PerSlot;
     fn next(per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation;
 }
 
-/// Per-slot generation generator
+/// Specifies per-slot generation generator backed by a [`nonmax`] type
 #[derive(Derivative)]
 #[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct PerSlot<G = NonMaxU32> {
     _ty: PhantomData<G>,
 }
 
-/// Per-slot generation generator
+/// Specifies per-slot generation generator backed by a [`nonmax`] type
 #[derive(Derivative)]
 #[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct PerArena<G = NonMaxU32> {
@@ -177,28 +174,37 @@ macro_rules! impl_generators {
 impl_generators!(NonMaxU8, NonMaxU16, NonMaxU32, NonMaxU64);
 
 impl<T, G: Gen> Arena<T, G> {
+    /// Number of items in this arena
     pub fn len(&self) -> usize {
         self.len.raw as usize
     }
 
+    /// Capacity of the backing vec
     pub fn capacity(&self) -> usize {
         self.data.capacity()
     }
 }
 
-impl<T, G: Gen> Arena<T, G> {
-    pub fn new() -> Self
-    where
-        G::PerArena: Default,
-    {
+impl<T, G: Gen> Default for Arena<T, G>
+where
+    G::PerSlot: Default,
+    G::PerArena: Default,
+{
+    fn default() -> Self {
+        Self::with_capacity(4)
+    }
+}
+
+impl<T, G: Gen> Arena<T, G>
+where
+    G::PerSlot: Default,
+    G::PerArena: Default,
+{
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn with_capacity(cap: usize) -> Self
-    where
-        G::PerSlot: Default,
-        G::PerArena: Default,
-    {
+    pub fn with_capacity(cap: usize) -> Self {
         assert!(cap < RawSlot::MAX as usize, "Too big arena");
 
         let mut data = Vec::with_capacity(cap);
@@ -223,7 +229,7 @@ impl<T, G: Gen> Arena<T, G>
 where
     G::PerSlot: Default,
 {
-    fn next_slot(&mut self) -> Slot {
+    fn next_free_slot(&mut self) -> Slot {
         if let Some(slot) = self.free.pop() {
             slot
         } else {
@@ -233,24 +239,55 @@ where
     }
 
     fn extend(&mut self, new_cap: usize) {
-        assert!(self.data.capacity() > new_cap);
+        assert!(self.data.capacity() < new_cap);
         assert!((new_cap as RawSlot) < RawSlot::MAX);
-        let prev_cap = self.data.capacity();
-        self.data.resize_with(new_cap, Default::default);
 
-        self.free.resize_with(new_cap, Default::default);
+        let prev_cap = self.data.capacity();
+        self.data.resize_with(new_cap, Entry::default);
+
+        // collect all the new, free slots
         for raw in prev_cap..new_cap {
             self.free.push(Slot { raw: raw as u32 });
         }
     }
 
     pub fn insert(&mut self, data: T) -> Index<T, G> {
-        let slot = self.next_slot();
-        self.len.inc();
+        let slot = self.next_free_slot();
+
         let entry = &mut self.data[slot.raw as usize];
-        assert!(entry.data.is_none());
+        assert!(entry.data.is_none(), "free slot occupied?");
         entry.data = Some(data);
+        self.len.inc();
+
         let gen = G::next(&mut self.gen, &mut entry.gen);
         Index::new(slot, gen)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_capacity() {
+        #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+        pub struct Entity {
+            pub hp: usize,
+        }
+
+        let mut entities = Arena::<Entity>::with_capacity(1);
+        assert_eq!(entities.len(), 0);
+        assert_eq!(entities.capacity(), 1);
+
+        let _index: Index<Entity> = entities.insert(Entity { hp: 0 });
+        println!("{:?}", entities);
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities.capacity(), 1);
+
+        let _index2: Index<Entity> = entities.insert(Entity { hp: 1 });
+        println!("{:?}", entities);
+        println!("cap: {}", entities.capacity());
+        assert_eq!(entities.len(), 2);
+        assert_eq!(entities.capacity(), 4); // same as vec
     }
 }
