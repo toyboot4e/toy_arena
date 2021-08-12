@@ -85,6 +85,7 @@ slot is already replaced by another value, the generation of the [`Entry`] is al
 so we can identify the original item from replaced item.
 */
 #[derive(Derivative)]
+#[derivative(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Index<T, D = (), G: Gen = DefaultGen> {
     slot: Slot,
     gen: G,
@@ -419,15 +420,18 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     pub fn retain<F: FnMut(Index<T, D, G>, &mut T) -> bool>(&mut self, mut pred: F) {
-        for (i, e) in self.entries.iter_mut().enumerate() {
-            if let Some(data) = &mut e.data {
+        let mut i = 0;
+        while i < self.entries.len() {
+            let entry = &mut self.entries[i];
+            if let Some(data) = &mut entry.data {
                 let slot = Slot { raw: i as RawSlot };
-                let gen = e.gen.clone();
-                let index = Index::new(slot, gen);
-                if pred(index, data) {
-                    e.data = None;
+                let index = Index::new(slot, entry.gen.clone());
+                if !pred(index.clone(), data) {
+                    self.remove(index).unwrap();
                 }
             }
+
+            i += 1;
         }
     }
 }

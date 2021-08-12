@@ -93,3 +93,20 @@ fn drain() {
     assert_eq!(arena.get(one), None);
     assert_eq!(arena.get(two), None);
 }
+
+#[test]
+fn retain() {
+    let mut arena = Arena::<i32>::new();
+
+    for i in 0..100 {
+        arena.insert(i);
+    }
+
+    arena.retain(|_index, &mut i| i % 2 == 1);
+
+    for (_index, data) in arena.iter() {
+        assert_eq!(data % 2, 1);
+    }
+
+    assert_eq!(arena.len(), 50);
+}
