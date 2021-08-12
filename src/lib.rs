@@ -1,7 +1,7 @@
 /*!
 Extensible generational arena for various uses
 
-Goals: Tiny code and real use. Non-goals: Extream memory efficiency and super good performance.
+Goals: Tiny code and real use. Non-goals: Extream performance and super safety.
 
 NOTE: While arena requires strict safety, `toy_arena` is not so tested (yet).
 
@@ -433,6 +433,27 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         self.entries.iter().flat_map(|e| e.data.as_ref())
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
+        self.entries.iter_mut().flat_map(|e| e.data.as_mut())
+    }
+
+    pub fn drain<R: ops::RangeBounds<usize>>(&mut self, rng: R) -> impl Iterator<Item = T> + '_ {
+        self.entries.drain(rng).filter_map(|e| e.data)
+    }
+
+    pub fn retain<F: FnMut(Index<T, D, G>, &mut T) -> bool>(&mut self, mut pred: F) {
+        for (i, e) in self.entries.iter_mut().enumerate() {
+            if let Some(data) = &mut e.data {
+                let slot = Slot { raw: i as RawSlot };
+                let gen = G::current(&self.gen, &e.gen);
+                let index = Index::new(slot, gen);
+                if pred(index, data) {
+                    e.data = None;
+                }
+            }
+        }
     }
 }
 
