@@ -12,12 +12,9 @@ Goals: Tiny code and handy use. Non-goals: Extream memory efficiency and super g
 * [thunderdome](https://docs.rs/thunderdome/latest)
 */
 
-pub extern crate nonmax;
-
-use std::{fmt::Debug, hash::Hash, marker::PhantomData, ops};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData, num::*, ops};
 
 use derivative::Derivative;
-use nonmax::*;
 
 /// Default generation generator
 pub type DefaultGen = PerSlot;
@@ -29,9 +26,6 @@ It's basically a [`Vec`], but with fixed item positions; arena operations don't 
 more, each item in the arena is given "generation" value, where we can distinguish new values from
 original values (and see if the original value is still there or alreadly replaced). Generation can
 be created [`PerSlot`] or [`PerArena`].
-
-All of the where bounds in the implementations can be ignored (since all the [`Gen`] impls satisfy
-the bounds).
 */
 #[derive(Derivative)]
 #[derivative(
@@ -150,74 +144,89 @@ impl Slot {
 }
 
 /**
-Generator of generations [`PerSlot`] or [`PerArena`], backed by an unsigned [`nonmax`] type
+Generator of generations [`PerSlot`] or [`PerArena`], backed by an unsigned `NonZero` type
 */
 pub trait Gen {
-    /// Identifier of new/orignal value, backed by one of the unsigned [`nonmax`] types
-    type Generation;
+    /// Identifier of new/orignal value, backed by one of the unsigned `NonZero` types
+    type Generation: Debug + Clone + PartialEq + Eq + Hash;
     /// Per-arena generation generator
-    type PerArena;
+    type PerArena: Debug + Clone + PartialEq + Eq + Hash;
     /// Per-slot generation generator
-    type PerSlot;
+    type PerSlot: Debug + Clone + PartialEq + Eq + Hash;
+    /// Alternative to [`Self::Generation::default`]
+    fn default_per_arena() -> Self::PerArena;
+    fn default_per_slot() -> Self::PerSlot;
     fn current(per_arena: &Self::PerArena, per_slot: &Self::PerSlot) -> Self::Generation;
     fn next(per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation;
 }
 
-/// Specifies per-slot generation generator backed by an unsigned [`nonmax`] type
+/// Specifies per-slot generation generator backed by an unsigned `NonZero` type
 #[derive(Derivative)]
 #[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct PerSlot<G = NonMaxU32> {
+pub struct PerSlot<G = NonZeroU32> {
     _ty: PhantomData<G>,
 }
 
-/// Specifies per-arena generation generator backed by an unsigned [`nonmax`] type
+/// Specifies per-arena generation generator backed by an unsigned `NonZero` type
 #[derive(Derivative)]
 #[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct PerArena<G = NonMaxU32> {
+pub struct PerArena<G = NonZeroU32> {
     _ty: PhantomData<G>,
 }
 
 macro_rules! impl_generators {
-    ($nonmax:ident) => {
-        impl Gen for PerSlot<$nonmax> {
-            type Generation = $nonmax;
+    ($nonzero:ident) => {
+        impl Gen for PerSlot<$nonzero> {
+            type Generation = $nonzero;
             type PerArena = ();
             type PerSlot = Self::Generation;
+            fn default_per_arena() -> Self::PerArena {
+                ()
+            }
+            fn default_per_slot() -> Self::PerSlot {
+                unsafe { $nonzero::new_unchecked(1) }
+            }
             fn current(_per_arena: &Self::PerArena, per_slot: &Self::PerSlot) -> Self::Generation {
                 per_slot.clone()
             }
             fn next(_per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation {
                 let raw = per_slot.get();
-                let new = $nonmax::new(raw + 1).expect("generation exceed");
+                let new = $nonzero::new(raw + 1).expect("generation exceed");
                 *per_slot = new;
                 new
             }
         }
 
-        impl Gen for PerArena<$nonmax> {
-            type Generation = $nonmax;
+        impl Gen for PerArena<$nonzero> {
+            type Generation = $nonzero;
             type PerArena = Self::Generation;
             type PerSlot = ();
+            fn default_per_arena() -> Self::PerArena {
+                unsafe { $nonzero::new_unchecked(1) }
+            }
+            fn default_per_slot() -> Self::PerSlot {
+                ()
+            }
             fn current(per_arena: &Self::PerArena, _per_slot: &Self::PerSlot) -> Self::Generation {
                 per_arena.clone()
             }
             fn next(per_arena: &mut Self::PerArena, _per_slot: &mut Self::PerSlot) -> Self::Generation {
                 let raw = per_arena.get();
-                let new = $nonmax::new(raw + 1).expect("generation exceed");
+                let new = $nonzero::new(raw + 1).expect("generation exceed");
                 *per_arena = new;
                 new
             }
         }
     };
 
-    ($($nonmax:ident),+) => {
+    ($($nonzero:ident),+) => {
         $(
-            impl_generators!($nonmax);
+            impl_generators!($nonzero);
         )*
     };
 }
 
-impl_generators!(NonMaxU8, NonMaxU16, NonMaxU32, NonMaxU64);
+impl_generators!(NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64);
 
 impl<T, D, G: Gen> Arena<T, D, G> {
     /// Number of items in this arena
@@ -259,7 +268,7 @@ where
 
         let mut data = Vec::with_capacity(cap);
         for _ in 0..cap {
-            data.push(Entry::default());
+            data.push(Self::default_entry());
         }
 
         let free = (0u32..cap as RawSlot)
@@ -270,8 +279,15 @@ where
             data,
             free,
             len: Slot::default(),
-            gen: G::PerArena::default(),
+            gen: G::default_per_arena(),
             _distinct: PhantomData,
+        }
+    }
+
+    fn default_entry() -> Entry<T, G> {
+        Entry {
+            data: None,
+            gen: G::default_per_slot(),
         }
     }
 }
@@ -294,7 +310,7 @@ where
         assert!((new_cap as RawSlot) < RawSlot::MAX);
 
         let prev_cap = self.data.capacity();
-        self.data.resize_with(new_cap, Entry::default);
+        self.data.resize_with(new_cap, Self::default_entry);
 
         // collect all the new, free slots
         for raw in prev_cap..new_cap {
@@ -389,7 +405,7 @@ mod test {
         // `Index` is 8 bytes long by default
         assert_eq!(mem::size_of::<Index<()>>(), mem::size_of::<u32>() * 2);
 
-        // the nonmax type reduces the optional index size
+        // the nonzero type reduces the optional index size
         assert_eq!(
             mem::size_of::<Option<Index<()>>>(),
             mem::size_of::<Index<()>>()

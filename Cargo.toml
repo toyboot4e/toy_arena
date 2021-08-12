@@ -5,8 +5,3 @@ edition = "2018"
 
 [dependencies]
 derivative = "2.2.0"
-nonmax = "0.5.0"
-
-[patch.crates-io]
-# default impl branch
-nonmax = { git = "https://github.com/toyboot4e/nonmax" }
