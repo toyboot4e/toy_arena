@@ -4,7 +4,8 @@ Extensible generational arena
 Goals: Tiny code. Non-goals: Extream memory efficiency.
 
 # Features
-* Distinct arena types with third type parameter to [`Aerna`]
+* Distinct arena types with second type parameter to [`Aerna`]
+* Custom generation generator with second type parameter to [`Aerna`]
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -36,18 +37,39 @@ be created [`PerSlot`] or [`PerArena`].
     Eq(bound = "T: PartialEq, <G as Gen>::PerArena: Eq, <G as Gen>::PerSlot: PartialEq"),
     Hash(bound = "T: Hash, <G as Gen>::PerArena: Hash, <G as Gen>::PerSlot: Hash")
 )]
-pub struct Arena<T, G: Gen = PerSlot, D = ()> {
+pub struct Arena<T, D = (), G: Gen = PerSlot> {
     data: Vec<Entry<T, G>>,
     /// All of free slots
     free: Vec<Slot>,
     len: Slot,
     /// Per-arena generator. Zero-sized if we use [`PerArena`]
     gen: G::PerArena,
-    /// Field for creating distinct types
+    /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
     pub _distinct: PhantomData<D>,
 }
-}
+
+// /**
+// Mutable access to multiple items in [`Arena`] at the cost of run-time check
+// */
+// #[derive(Derivative)]
+// #[derivative(
+//     Debug(bound = "&'a mut Arena<T, D, G>: Debug"),
+//     Clone(bound = "&'a mut Arena<T, D, G>: Clone"),
+//     PartialEq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
+//     Eq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
+//     Hash(bound = "&'a mut Arena<T, D, G>: Hash")
+// )]
+// pub struct ArenaCell<'a, T, , D = (),G: Gen = PerSlot> {
+//     log: smallvec::SmallVec<[Borrow; 2]>,
+//     arena: &'a mut Arena<T, D, G>,
+// }
+//
+// #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// enum Borrow {
+//     Mutable(Slot),
+//     Immutable(Slot),
+// }
 
 /* `dervative`:
 We went to implement std traits only when all the fields implement that trait.
@@ -70,14 +92,14 @@ so we can identify the original item from replaced item.
     Eq(bound = "<G as Gen>::Generation: PartialEq"),
     Hash(bound = "<G as Gen>::Generation: Hash")
 )]
-pub struct Index<T, G: Gen = PerSlot, D = ()> {
+pub struct Index<T, D = (), G: Gen = PerSlot> {
     slot: Slot,
     gen: G::Generation,
     _ty: PhantomData<T>,
     _distinct: PhantomData<D>,
 }
 
-impl<T, G: Gen, D> Index<T, G, D> {
+impl<T, D, G: Gen> Index<T, D, G> {
     fn new(slot: Slot, gen: G::Generation) -> Self {
         Self {
             slot,
@@ -184,7 +206,7 @@ macro_rules! impl_generators {
 
 impl_generators!(NonMaxU8, NonMaxU16, NonMaxU32, NonMaxU64);
 
-impl<T, G: Gen> Arena<T, G> {
+impl<T, D, G: Gen> Arena<T, D, G> {
     /// Number of items in this arena
     pub fn len(&self) -> usize {
         self.len.raw as usize
@@ -196,7 +218,7 @@ impl<T, G: Gen> Arena<T, G> {
     }
 }
 
-impl<T, G: Gen> Default for Arena<T, G>
+impl<T, D, G: Gen> Default for Arena<T, D, G>
 where
     G::PerSlot: Default,
     G::PerArena: Default,
@@ -206,7 +228,7 @@ where
     }
 }
 
-impl<T, G: Gen> Arena<T, G>
+impl<T, D, G: Gen> Arena<T, D, G>
 where
     G::PerSlot: Default,
     G::PerArena: Default,
@@ -237,7 +259,7 @@ where
     }
 }
 
-impl<T, G: Gen, D> Arena<T, G, D>
+impl<T, D, G: Gen> Arena<T, D, G>
 where
     G::PerSlot: Default,
 {
@@ -272,8 +294,11 @@ where
         self.len.inc();
 
         let gen = G::next(&mut self.gen, &mut entry.gen);
-        Index::<T, G, D>::new(slot, gen)
+        Index::<T, D, G>::new(slot, gen)
     }
+
+    pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
+        todo!()
     }
 }
 
