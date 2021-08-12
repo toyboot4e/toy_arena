@@ -3,6 +3,8 @@ Extensible generational arena for various uses
 
 Goals: Tiny code and handy use. Non-goals: Extream memory efficiency and super good performance.
 
+NOTE: While arena requires strict safety, `toy_arena` is not so tested (yet).
+
 # Features
 * Distinct arena types with second type parameter to [`Arena`]
 * Custom generation generator with third type parameter to [`Arena`]
@@ -141,6 +143,7 @@ impl Slot {
         self.raw
     }
 
+    /// NOTE: Slot is also used to track arena length
     fn inc(&mut self) {
         self.raw = self
             .raw
@@ -148,6 +151,7 @@ impl Slot {
             .unwrap_or_else(|| panic!("arena slot overflow"));
     }
 
+    /// NOTE: Slot is also used to track arena length
     fn dec(&mut self) {
         self.raw = self
             .raw
@@ -279,15 +283,9 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             data.push(Self::default_entry());
         }
 
-        // fullfill the free slot logs
-        let free = (0..cap as RawSlot)
-            .map(|x| Slot { raw: x })
-            .collect::<Vec<_>>();
-
         Self {
             entries: data,
-            free,
-            // FIXME: use seprate type for length
+            free: Vec::new(),
             len: Slot::default(),
             gen: G::default_per_arena(),
             _distinct: PhantomData,
@@ -315,6 +313,12 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
         let gen = G::next(&mut self.gen, &mut entry.gen);
         Index::<T, D, G>::new(slot, gen)
+    }
+
+    /// Removes all the items
+    pub fn clear(&mut self) {
+        self.free.clear();
+        self.len = Slot { raw: 0 };
     }
 
     /// Returns some item if the generation matchesA. Returns none on mismatch or no data
@@ -358,7 +362,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             slot
         } else {
             self.extend(self.entries.capacity() * 2);
-            self.free.pop().unwrap()
+            self.next_free_slot()
         }
     }
 
@@ -366,14 +370,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     fn extend(&mut self, new_cap: usize) {
         assert!(self.entries.capacity() < new_cap);
         assert!((new_cap as RawSlot) < RawSlot::MAX);
-
-        let prev_cap = self.entries.capacity();
         self.entries.resize_with(new_cap, Self::default_entry);
-
-        // collect all the new, free slots
-        for raw in prev_cap..new_cap {
-            self.free.push(Slot { raw: raw as u32 });
-        }
     }
 }
 
@@ -462,13 +459,11 @@ mod test {
         let mut entities = Arena::<Entity>::with_capacity(1);
         assert_eq!(entities.len(), 0);
         assert_eq!(entities.capacity(), 1);
-        assert_eq!(entities.free.len() + entities.len(), entities.entries.len());
 
         let index0: Index<Entity> = entities.insert(Entity { hp: 0 });
         assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
         assert_eq!(entities.len(), 1);
         assert_eq!(entities.capacity(), 1);
-        assert_eq!(entities.free.len() + entities.len(), entities.entries.len());
         assert_eq!(index0.gen(&entities), unsafe {
             // first generation
             NonZeroU32::new_unchecked(2)
@@ -478,7 +473,6 @@ mod test {
         assert_eq!(index1.slot(), unsafe { Slot::from_raw(1) });
         assert_eq!(entities.len(), 2);
         assert_eq!(entities.capacity(), 4); // same as vec
-        assert_eq!(entities.free.len() + entities.len(), entities.entries.len());
 
         let removed_entity = entities.remove(index0);
         assert_eq!(entities.len(), 1);
