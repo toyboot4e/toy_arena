@@ -1,0 +1,8 @@
+[package]
+name = "toy_arena"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+derivative = "2.2.0"
+nonmax = "0.5.0"
