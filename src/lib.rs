@@ -29,6 +29,9 @@ It's basically a [`Vec`], but with fixed item positions; arena operations don't 
 more, each item in the arena is given "generation" value, where we can distinguish new values from
 original values (and see if the original value is still there or alreadly replaced). Generation can
 be created [`PerSlot`] or [`PerArena`].
+
+All of the where bounds in the implementations can be ignored (since all the [`Gen`] impls satisfy
+the bounds).
 */
 #[derive(Derivative)]
 #[derivative(
@@ -354,6 +357,25 @@ where
         self.data
             .get_mut(slot.raw as usize)
             .and_then(|e| e.data.as_mut())
+    }
+}
+
+impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G>
+where
+    G::Generation: PartialEq,
+{
+    type Output = T;
+    fn index(&self, index: Index<T, D, G>) -> &Self::Output {
+        self.get(index).unwrap()
+    }
+}
+
+impl<T, D, G: Gen> ops::IndexMut<Index<T, D, G>> for Arena<T, D, G>
+where
+    G::Generation: PartialEq,
+{
+    fn index_mut(&mut self, index: Index<T, D, G>) -> &mut Self::Output {
+        self.get_mut(index).unwrap()
     }
 }
 
