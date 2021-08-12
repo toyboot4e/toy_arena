@@ -17,22 +17,20 @@ NOTE: While arena requires strict safety, `toy_arena` is not so tested (yet).
 #[cfg(test)]
 mod test;
 
-use std::{fmt::Debug, hash::Hash, iter::FusedIterator, marker::PhantomData, num::*, ops};
+use std::{fmt::Debug, hash::Hash, iter::*, marker::PhantomData, num::*, ops, slice::Iter};
 
 use derivative::Derivative;
 // use smallvec::SmallVec;
 
 /// Default generation generator
-pub type DefaultGen = PerSlot;
+pub type DefaultGen = NonZeroU32;
 
 /**
 Generational arena
 
 It's basically a [`Vec`], but with fixed item positions; arena operations don't move items. And
 more, each item in the arena is given "generation" value, where we can distinguish new values from
-original values (and see if the original value is still there or alreadly replaced). Generation can
-be created [`PerSlot`] or [`PerArena`].
-*/
+original values (and see if the original value is still there or alreadly replaced).*/
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -46,8 +44,6 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     /// If `free` is empty, `entries[0..entries.len()]` is occupied
     free: Vec<Slot>,
     len: Slot,
-    /// Per-arena generator. Zero-sized if we use [`PerArena`]
-    gen: G::PerArena,
     /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
     pub _distinct: PhantomData<D>,
@@ -91,13 +87,13 @@ so we can identify the original item from replaced item.
 #[derive(Derivative)]
 pub struct Index<T, D = (), G: Gen = DefaultGen> {
     slot: Slot,
-    gen: G::Generation,
+    gen: G,
     _ty: PhantomData<T>,
     _distinct: PhantomData<D>,
 }
 
 impl<T, D, G: Gen> Index<T, D, G> {
-    fn new(slot: Slot, gen: G::Generation) -> Self {
+    fn new(slot: Slot, gen: G) -> Self {
         Self {
             slot,
             gen,
@@ -108,10 +104,6 @@ impl<T, D, G: Gen> Index<T, D, G> {
 
     pub fn slot(&self) -> Slot {
         self.slot.clone()
-    }
-
-    pub fn gen(&self, arena: &Arena<T, D, G>) -> G::Generation {
-        self.gen.clone()
     }
 }
 
@@ -124,8 +116,7 @@ impl<T, D, G: Gen> Index<T, D, G> {
     Hash(bound = "Option<T>: Hash")
 )]
 struct Entry<T, G: Gen = DefaultGen> {
-    /// It's `()` if the generator is per-arena.
-    gen: G::PerSlot,
+    gen: G,
     data: Option<T>,
 }
 
@@ -164,79 +155,23 @@ impl Slot {
     }
 }
 
-/**
-Generator of generations [`PerSlot`] or [`PerArena`], backed by an unsigned `NonZero` type
-*/
-pub trait Gen {
-    /// Identifier of new/orignal value, backed by one of the unsigned `NonZero` types
-    type Generation: Debug + Clone + PartialEq + Eq + Hash;
-    /// Per-arena generation generator
-    type PerArena: Debug + Clone + PartialEq + Eq + Hash;
-    /// Per-slot generation generator
-    type PerSlot: Debug + Clone + PartialEq + Eq + Hash;
-    /// Alternative to [`Self::Generation::default`]
-    fn default_per_arena() -> Self::PerArena;
-    fn default_per_slot() -> Self::PerSlot;
-    fn current(per_arena: &Self::PerArena, per_slot: &Self::PerSlot) -> Self::Generation;
-    fn next(per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation;
-}
-
-/// Specifies per-slot generation generator backed by an unsigned `NonZero` type
-#[derive(Derivative)]
-#[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct PerSlot<G = NonZeroU32> {
-    _ty: PhantomData<G>,
-}
-
-/// Specifies per-arena generation generator backed by an unsigned `NonZero` type
-#[derive(Derivative)]
-#[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct PerArena<G = NonZeroU32> {
-    _ty: PhantomData<G>,
+/// Generator, one of the unsized `NonZero` types
+pub trait Gen: Debug + Clone + PartialEq + Eq + Hash {
+    fn default_gen() -> Self;
+    fn next(&mut self) -> Self;
 }
 
 macro_rules! impl_generators {
     ($nonzero:ident) => {
-        impl Gen for PerSlot<$nonzero> {
-            type Generation = $nonzero;
-            type PerArena = ();
-            type PerSlot = Self::Generation;
-            fn default_per_arena() -> Self::PerArena {
-                ()
-            }
-            fn default_per_slot() -> Self::PerSlot {
+        impl Gen for $nonzero {
+            fn default_gen() -> Self {
                 unsafe { $nonzero::new_unchecked(1) }
             }
-            fn current(_per_arena: &Self::PerArena, per_slot: &Self::PerSlot) -> Self::Generation {
-                per_slot.clone()
-            }
-            fn next(_per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation {
+            fn next(&mut self) -> Self {
                 // Always increment. Initial item is given raw generation "2"
-                let raw = per_slot.get();
+                let raw = self.get();
                 let new = $nonzero::new(raw + 1).expect("generation overflow");
-                *per_slot = new;
-                new
-            }
-        }
-
-        impl Gen for PerArena<$nonzero> {
-            type Generation = $nonzero;
-            type PerArena = Self::Generation;
-            type PerSlot = ();
-            fn default_per_arena() -> Self::PerArena {
-                unsafe { $nonzero::new_unchecked(1) }
-            }
-            fn default_per_slot() -> Self::PerSlot {
-                ()
-            }
-            fn current(per_arena: &Self::PerArena, _per_slot: &Self::PerSlot) -> Self::Generation {
-                per_arena.clone()
-            }
-            fn next(per_arena: &mut Self::PerArena, _per_slot: &mut Self::PerSlot) -> Self::Generation {
-                // Always increment. Initial item is given raw generation "2"
-                let raw = per_arena.get();
-                let new = $nonzero::new(raw + 1).expect("generation overflow");
-                *per_arena = new;
+                *self = new;
                 new
             }
         }
@@ -296,7 +231,6 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             entries: data,
             free,
             len: Slot::default(),
-            gen: G::default_per_arena(),
             _distinct: PhantomData,
         }
     }
@@ -304,7 +238,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     fn default_entry() -> Entry<T, G> {
         Entry {
             data: None,
-            gen: G::default_per_slot(),
+            gen: G::default_gen(),
         }
     }
 }
@@ -318,7 +252,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             assert!(entry.data.is_none(), "free slot occupied?");
             entry.data = Some(data);
             self.len.inc();
-            G::next(&mut self.gen, &mut entry.gen)
+            entry.gen.next()
         };
 
         Index::<T, D, G>::new(slot, gen)
@@ -333,7 +267,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// Returns some item if the generation matchesA. Returns none on mismatch or no data
     pub fn remove(&mut self, index: Index<T, D, G>) -> Option<T> {
         let entry = &mut self.entries[index.slot.raw as usize];
-        if G::current(&self.gen, &entry.gen) != index.gen || entry.data.is_none() {
+        if entry.gen != index.gen || entry.data.is_none() {
             // generation mistmatch: can't remove
             None
         } else {
@@ -348,10 +282,9 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// Returns none if the generation matches. Returns some index on mismatch or no data
     pub fn invalidate(&mut self, index: Index<T, D, G>) -> Option<Index<T, D, G>> {
         let entry = &mut self.entries[index.slot.raw as usize];
-        let gen = G::current(&self.gen, &entry.gen);
-        if gen != index.gen || entry.data.is_none() {
+        if entry.gen != index.gen || entry.data.is_none() {
             // generation mismatch: can't invalidate
-            Some(Index::new(index.slot, G::current(&self.gen, &entry.gen)))
+            Some(Index::new(index.slot, entry.gen.clone()))
         } else {
             entry.data = None;
             self.len.dec();
@@ -378,7 +311,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let entry = &mut self.entries[slot.raw as usize];
         if entry.data.is_none() {
             // generation mismatch: can't invalidate
-            Some(Index::new(slot, G::current(&self.gen, &entry.gen)))
+            Some(Index::new(slot, entry.gen.clone()))
         } else {
             entry.data = None;
             self.len.dec();
@@ -425,10 +358,9 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
-        self.entries.get(index.slot.raw as usize).and_then(|e| {
-            let gen = G::current(&self.gen, &e.gen);
-            if gen == index.gen {
-                e.data.as_ref()
+        self.entries.get(index.slot.raw as usize).and_then(|entry| {
+            if entry.gen == index.gen {
+                entry.data.as_ref()
             } else {
                 None
             }
@@ -437,15 +369,15 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     pub fn get_mut(&mut self, index: Index<T, D, G>) -> Option<&mut T> {
         // NOTE: Rust closure is not (yet) smart enough to borrow only some fileds of struct
-        let (data, gen) = (&mut self.entries, &self.gen);
-        data.get_mut(index.slot.raw as usize).and_then(|e| {
-            let gen = G::current(&gen, &e.gen);
-            if gen == index.gen {
-                e.data.as_mut()
-            } else {
-                None
-            }
-        })
+        self.entries
+            .get_mut(index.slot.raw as usize)
+            .and_then(|entry| {
+                if entry.gen == index.gen {
+                    entry.data.as_mut()
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
@@ -462,8 +394,17 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 }
 
 impl<T, D, G: Gen> Arena<T, D, G> {
-    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
-        self.entries.iter().flat_map(|e| e.data.as_ref())
+    pub fn iter(&self) -> impl Iterator<Item = (Index<T, D, G>, &T)> + '_ {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_i, e)| e.data.is_some())
+            .map(|(i, e)| {
+                (
+                    Index::new(Slot { raw: i as RawSlot }, e.gen.clone()),
+                    e.data.as_ref().unwrap(),
+                )
+            })
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
@@ -481,7 +422,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         for (i, e) in self.entries.iter_mut().enumerate() {
             if let Some(data) = &mut e.data {
                 let slot = Slot { raw: i as RawSlot };
-                let gen = G::current(&self.gen, &e.gen);
+                let gen = e.gen.clone();
                 let index = Index::new(slot, gen);
                 if pred(index, data) {
                     e.data = None;
@@ -490,6 +431,15 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
     }
 }
+
+// impl<'a, T, D, G: Gen> IntoIterator for &'a Arena<T, D, G> {
+//     type Item = (Index<T, D, G>, &'a T);
+//     type IntoIter =
+//         FlatMap<Iter<'a, Entry<T, G>>, Option<&'a T>, impl FnMut(&'a Entry<T, G>) -> Option<&'a T>>;
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.iter()
+//     }
+// }
 
 struct Drain<'a, T, D, G: Gen> {
     arena: &'a mut Arena<T, D, G>,

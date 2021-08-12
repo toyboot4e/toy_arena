@@ -31,10 +31,6 @@ fn test_capacity() {
     assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
     assert_eq!(entities.len(), 1);
     assert_eq!(entities.capacity(), 2);
-    assert_eq!(index0.gen(&entities), unsafe {
-        // first generation
-        NonZeroU32::new_unchecked(2)
-    });
 
     let index1: Index<Entity> = entities.insert(Entity { hp: 1 });
     assert_eq!(index1.slot(), unsafe { Slot::from_raw(1) });
@@ -47,10 +43,6 @@ fn test_capacity() {
     let index0: Index<Entity> = entities.insert(Entity { hp: 10 });
     assert_eq!(entities.len(), 2);
     assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
-    assert_eq!(index0.gen(&entities), unsafe {
-        // second generation
-        NonZeroU32::new_unchecked(3)
-    });
 
     // extend
     let index2: Index<Entity> = entities.insert(Entity { hp: 2 });
