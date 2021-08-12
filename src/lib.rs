@@ -1,13 +1,14 @@
 /*!
 Extensible generational arena
 
-* Goals: Tiny code.
-* Non-goals: Extream memory efficiency.
+Goals: Tiny code. Non-goals: Extream memory efficiency.
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
 * [thunderdome](https://docs.rs/thunderdome/latest)
 */
+
+pub extern crate nonmax;
 
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, ops};
 
@@ -18,9 +19,9 @@ use nonmax::*;
 Generational arena
 
 It's basically a [`Vec`], but with fixed item positions; arena operations don't move items. And
-more, each item in the arena is given "generation" value, which identifies the original value from
-another values (and see if the original value is already replaced or not). Generation can be created
-[`PerSlot`] or [`PerArena`].
+more, each item in the arena is given "generation" value, where we can distinguish new values from
+original values (and see if the original value is still there or alreadly replaced). Generation can
+be created [`PerSlot`] or [`PerArena`].
 */
 #[derive(Derivative)]
 #[derivative(
@@ -48,7 +49,7 @@ API, so we added indirect bounds above
 */
 
 /**
-Index of an item in the belonging arena: [`Slot`] + [`Generation`](Gen::Generation)
+[`Slot`] + [`Generation`](Gen::Generation). Takes 8 bytes by default
 
 Item in the [`Arena`] is located by [`Slot`] and identified by their generation. If the item at a
 slot is already replaced by another value, the generation of the [`Entry`] is already incremented,
@@ -95,6 +96,7 @@ struct Entry<T, G: Gen> {
 
 type RawSlot = u32;
 
+/// Memory location in [`Arena`]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Slot {
@@ -114,7 +116,7 @@ impl Slot {
 Generator of generations [`PerSlot`] or [`PerArena`], backed by an unsigned [`nonmax`] type
 */
 pub trait Gen {
-    /// Generation, one of the [`nonmax`] types
+    /// Identifier of new/orignal value, backed by one of the unsigned [`nonmax`] types
     type Generation;
     /// Per-arena generation generator
     type PerArena;
@@ -123,14 +125,14 @@ pub trait Gen {
     fn next(per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation;
 }
 
-/// Specifies per-slot generation generator backed by a [`nonmax`] type
+/// Specifies per-slot generation generator backed by an unsigned [`nonmax`] type
 #[derive(Derivative)]
 #[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct PerSlot<G = NonMaxU32> {
     _ty: PhantomData<G>,
 }
 
-/// Specifies per-slot generation generator backed by a [`nonmax`] type
+/// Specifies per-arena generation generator backed by an unsigned [`nonmax`] type
 #[derive(Derivative)]
 #[derivative(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct PerArena<G = NonMaxU32> {
@@ -267,6 +269,12 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::mem;
+
+    #[test]
+    fn test_size() {
+        assert_eq!(mem::size_of::<Index<()>>(), mem::size_of::<u32>() * 2);
+    }
 
     #[test]
     fn test_capacity() {
