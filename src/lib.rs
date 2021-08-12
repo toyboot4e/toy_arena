@@ -3,6 +3,9 @@ Extensible generational arena
 
 Goals: Tiny code. Non-goals: Extream memory efficiency.
 
+# Features
+* Distinct arena types with third type parameter to [`Aerna`]
+
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
 * [thunderdome](https://docs.rs/thunderdome/latest)
@@ -33,13 +36,17 @@ be created [`PerSlot`] or [`PerArena`].
     Eq(bound = "T: PartialEq, <G as Gen>::PerArena: Eq, <G as Gen>::PerSlot: PartialEq"),
     Hash(bound = "T: Hash, <G as Gen>::PerArena: Hash, <G as Gen>::PerSlot: Hash")
 )]
-pub struct Arena<T, G: Gen = PerSlot> {
+pub struct Arena<T, G: Gen = PerSlot, D = ()> {
     data: Vec<Entry<T, G>>,
     /// All of free slots
     free: Vec<Slot>,
     len: Slot,
     /// Per-arena generator. Zero-sized if we use [`PerArena`]
     gen: G::PerArena,
+    /// Field for creating distinct types
+    #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
+    pub _distinct: PhantomData<D>,
+}
 }
 
 /* `dervative`:
@@ -57,24 +64,26 @@ so we can identify the original item from replaced item.
 */
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = " <G as Gen>::Generation: Debug"),
-    Clone(bound = " <G as Gen>::Generation: Clone"),
+    Debug(bound = "<G as Gen>::Generation: Debug"),
+    Clone(bound = "<G as Gen>::Generation: Clone"),
     PartialEq(bound = "<G as Gen>::Generation: PartialEq"),
     Eq(bound = "<G as Gen>::Generation: PartialEq"),
     Hash(bound = "<G as Gen>::Generation: Hash")
 )]
-pub struct Index<T, G: Gen = PerSlot> {
+pub struct Index<T, G: Gen = PerSlot, D = ()> {
     slot: Slot,
     gen: G::Generation,
     _ty: PhantomData<T>,
+    _distinct: PhantomData<D>,
 }
 
-impl<T, G: Gen> Index<T, G> {
+impl<T, G: Gen, D> Index<T, G, D> {
     fn new(slot: Slot, gen: G::Generation) -> Self {
         Self {
             slot,
             gen,
             _ty: PhantomData,
+            _distinct: PhantomData,
         }
     }
 }
@@ -140,35 +149,35 @@ pub struct PerArena<G = NonMaxU32> {
 }
 
 macro_rules! impl_generators {
-    ($ty:ident) => {
-        impl Gen for PerSlot<$ty> {
-            type Generation = $ty;
+    ($nonmax:ident) => {
+        impl Gen for PerSlot<$nonmax> {
+            type Generation = $nonmax;
             type PerArena = ();
             type PerSlot = Self::Generation;
             fn next(_per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation {
                 let raw = per_slot.get();
-                let new = $ty::new(raw + 1).expect("generation exceed");
+                let new = $nonmax::new(raw + 1).expect("generation exceed");
                 *per_slot = new;
                 new
             }
         }
 
-        impl Gen for PerArena<$ty> {
-            type Generation = $ty;
+        impl Gen for PerArena<$nonmax> {
+            type Generation = $nonmax;
             type PerArena = Self::Generation;
             type PerSlot = ();
             fn next(per_arena: &mut Self::PerArena, _per_slot: &mut Self::PerSlot) -> Self::Generation {
                 let raw = per_arena.get();
-                let new = $ty::new(raw + 1).expect("generation exceed");
+                let new = $nonmax::new(raw + 1).expect("generation exceed");
                 *per_arena = new;
                 new
             }
         }
     };
 
-    ($($ty:ident),+) => {
+    ($($nonmax:ident),+) => {
         $(
-            impl_generators!($ty);
+            impl_generators!($nonmax);
         )*
     };
 }
@@ -223,11 +232,12 @@ where
             free,
             len: Slot::default(),
             gen: G::PerArena::default(),
+            _distinct: PhantomData,
         }
     }
 }
 
-impl<T, G: Gen> Arena<T, G>
+impl<T, G: Gen, D> Arena<T, G, D>
 where
     G::PerSlot: Default,
 {
@@ -253,7 +263,7 @@ where
         }
     }
 
-    pub fn insert(&mut self, data: T) -> Index<T, G> {
+    pub fn insert(&mut self, data: T) -> Index<T, G, D> {
         let slot = self.next_free_slot();
 
         let entry = &mut self.data[slot.raw as usize];
@@ -262,7 +272,8 @@ where
         self.len.inc();
 
         let gen = G::next(&mut self.gen, &mut entry.gen);
-        Index::new(slot, gen)
+        Index::<T, G, D>::new(slot, gen)
+    }
     }
 }
 
