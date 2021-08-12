@@ -36,7 +36,7 @@ be created [`PerSlot`] or [`PerArena`].
     Hash(bound = "T: Hash")
 )]
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
-    data: Vec<Entry<T, G>>,
+    entries: Vec<Entry<T, G>>,
     /// All of free slots
     free: Vec<Slot>,
     len: Slot,
@@ -99,6 +99,14 @@ impl<T, D, G: Gen> Index<T, D, G> {
             _distinct: PhantomData,
         }
     }
+
+    pub fn slot(&self) -> Slot {
+        self.slot.clone()
+    }
+
+    pub fn gen(&self, arena: &Arena<T, D, G>) -> G::Generation {
+        self.gen.clone()
+    }
 }
 
 #[derive(Derivative)]
@@ -125,10 +133,25 @@ pub struct Slot {
 }
 
 impl Slot {
+    pub unsafe fn from_raw(raw: RawSlot) -> Self {
+        Self { raw }
+    }
+
+    pub fn to_raw(&self) -> RawSlot {
+        self.raw
+    }
+
     fn inc(&mut self) {
         self.raw = self
             .raw
             .checked_add(1)
+            .unwrap_or_else(|| panic!("arena slot overflow"));
+    }
+
+    fn dec(&mut self) {
+        self.raw = self
+            .raw
+            .checked_sub(1)
             .unwrap_or_else(|| panic!("arena slot overflow"));
     }
 }
@@ -180,8 +203,9 @@ macro_rules! impl_generators {
                 per_slot.clone()
             }
             fn next(_per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation {
+                // Always increment. Initial item is given raw generation "2"
                 let raw = per_slot.get();
-                let new = $nonzero::new(raw + 1).expect("generation exceed");
+                let new = $nonzero::new(raw + 1).expect("generation overflow");
                 *per_slot = new;
                 new
             }
@@ -201,8 +225,9 @@ macro_rules! impl_generators {
                 per_arena.clone()
             }
             fn next(per_arena: &mut Self::PerArena, _per_slot: &mut Self::PerSlot) -> Self::Generation {
+                // Always increment. Initial item is given raw generation "2"
                 let raw = per_arena.get();
-                let new = $nonzero::new(raw + 1).expect("generation exceed");
+                let new = $nonzero::new(raw + 1).expect("generation overflow");
                 *per_arena = new;
                 new
             }
@@ -230,7 +255,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Capacity of the backing vec
     pub fn capacity(&self) -> usize {
-        self.data.capacity()
+        self.entries.capacity()
     }
 }
 
@@ -248,18 +273,21 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn with_capacity(cap: usize) -> Self {
         assert!(cap < RawSlot::MAX as usize, "Too big arena");
 
+        // fullfill the data with empty entries
         let mut data = Vec::with_capacity(cap);
         for _ in 0..cap {
             data.push(Self::default_entry());
         }
 
-        let free = (0u32..cap as RawSlot)
+        // fullfill the free slot logs
+        let free = (0..cap as RawSlot)
             .map(|x| Slot { raw: x })
             .collect::<Vec<_>>();
 
         Self {
-            data,
+            entries: data,
             free,
+            // FIXME: use seprate type for length
             len: Slot::default(),
             gen: G::default_per_arena(),
             _distinct: PhantomData,
@@ -272,41 +300,80 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             gen: G::default_per_slot(),
         }
     }
-}
 
-impl<T, D, G: Gen> Arena<T, D, G> {
-    fn next_free_slot(&mut self) -> Slot {
-        if let Some(slot) = self.free.pop() {
-            slot
-        } else {
-            self.extend(self.data.capacity() * 2);
-            self.free.pop().unwrap()
-        }
-    }
-
-    fn extend(&mut self, new_cap: usize) {
-        assert!(self.data.capacity() < new_cap);
-        assert!((new_cap as RawSlot) < RawSlot::MAX);
-
-        let prev_cap = self.data.capacity();
-        self.data.resize_with(new_cap, Self::default_entry);
-
-        // collect all the new, free slots
-        for raw in prev_cap..new_cap {
-            self.free.push(Slot { raw: raw as u32 });
-        }
-    }
+    /*
+    State handling (length and free slots)
+    */
 
     pub fn insert(&mut self, data: T) -> Index<T, D, G> {
         let slot = self.next_free_slot();
 
-        let entry = &mut self.data[slot.raw as usize];
+        let entry = &mut self.entries[slot.raw as usize];
         assert!(entry.data.is_none(), "free slot occupied?");
         entry.data = Some(data);
         self.len.inc();
 
         let gen = G::next(&mut self.gen, &mut entry.gen);
         Index::<T, D, G>::new(slot, gen)
+    }
+
+    /// Returns some item if the generation matchesA. Returns none on mismatch or no data
+    pub fn remove(&mut self, index: Index<T, D, G>) -> Option<T> {
+        let entry = &mut self.entries[index.slot.raw as usize];
+        if G::current(&self.gen, &entry.gen) != index.gen || entry.data.is_none() {
+            // generation mistmatch: can't remove
+            None
+        } else {
+            let taken = entry.data.take();
+            assert!(taken.is_some());
+            self.len.dec();
+            self.free.push(index.slot);
+            taken
+        }
+    }
+
+    /// Returns none if the generation matches. Returns some index on mismatch or no data
+    pub fn invalidate(&mut self, index: Index<T, D, G>) -> Option<Index<T, D, G>> {
+        let entry = &mut self.entries[index.slot.raw as usize];
+        let gen = G::current(&self.gen, &entry.gen);
+        if gen != index.gen || entry.data.is_none() {
+            // generation mismatch: can't invalidate
+            Some(Index::new(index.slot, gen))
+        } else {
+            entry.data = None;
+            self.len.dec();
+            self.free.push(index.slot);
+            None
+        }
+    }
+
+    fn next_free_slot(&mut self) -> Slot {
+        if let Some(slot) = self.free.pop() {
+            slot
+        } else if self.entries.len() < self.entries.capacity() {
+            let slot = Slot {
+                raw: self.entries.len() as RawSlot,
+            };
+            self.entries.push(Self::default_entry());
+            slot
+        } else {
+            self.extend(self.entries.capacity() * 2);
+            self.free.pop().unwrap()
+        }
+    }
+
+    /// NOTE: After extending, len < capacity
+    fn extend(&mut self, new_cap: usize) {
+        assert!(self.entries.capacity() < new_cap);
+        assert!((new_cap as RawSlot) < RawSlot::MAX);
+
+        let prev_cap = self.entries.capacity();
+        self.entries.resize_with(new_cap, Self::default_entry);
+
+        // collect all the new, free slots
+        for raw in prev_cap..new_cap {
+            self.free.push(Slot { raw: raw as u32 });
+        }
     }
 }
 
@@ -316,7 +383,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
-        self.data.get(index.slot.raw as usize).and_then(|e| {
+        self.entries.get(index.slot.raw as usize).and_then(|e| {
             let gen = G::current(&self.gen, &e.gen);
             if gen == index.gen {
                 e.data.as_ref()
@@ -328,7 +395,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     pub fn get_mut(&mut self, index: Index<T, D, G>) -> Option<&mut T> {
         // NOTE: Rust closure is not (yet) smart enough to borrow only some fileds of struct
-        let (data, gen) = (&mut self.data, &self.gen);
+        let (data, gen) = (&mut self.entries, &self.gen);
         data.get_mut(index.slot.raw as usize).and_then(|e| {
             let gen = G::current(&gen, &e.gen);
             if gen == index.gen {
@@ -340,13 +407,13 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
-        self.data
+        self.entries
             .get(slot.raw as usize)
             .and_then(|e| e.data.as_ref())
     }
 
     pub fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
-        self.data
+        self.entries
             .get_mut(slot.raw as usize)
             .and_then(|e| e.data.as_mut())
     }
@@ -395,16 +462,37 @@ mod test {
         let mut entities = Arena::<Entity>::with_capacity(1);
         assert_eq!(entities.len(), 0);
         assert_eq!(entities.capacity(), 1);
-        assert_eq!(entities.free.len() + entities.len(), entities.data.len());
+        assert_eq!(entities.free.len() + entities.len(), entities.entries.len());
 
-        let _index: Index<Entity> = entities.insert(Entity { hp: 0 });
+        let index0: Index<Entity> = entities.insert(Entity { hp: 0 });
+        assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
         assert_eq!(entities.len(), 1);
         assert_eq!(entities.capacity(), 1);
-        assert_eq!(entities.free.len() + entities.len(), entities.data.len());
+        assert_eq!(entities.free.len() + entities.len(), entities.entries.len());
+        assert_eq!(index0.gen(&entities), unsafe {
+            // first generation
+            NonZeroU32::new_unchecked(2)
+        });
 
-        let _index2: Index<Entity> = entities.insert(Entity { hp: 1 });
+        let index1: Index<Entity> = entities.insert(Entity { hp: 1 });
+        assert_eq!(index1.slot(), unsafe { Slot::from_raw(1) });
         assert_eq!(entities.len(), 2);
         assert_eq!(entities.capacity(), 4); // same as vec
-        assert_eq!(entities.free.len() + entities.len(), entities.data.len());
+        assert_eq!(entities.free.len() + entities.len(), entities.entries.len());
+
+        let removed_entity = entities.remove(index0);
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities.capacity(), 4);
+        assert_eq!(removed_entity, Some(Entity { hp: 0 }));
+
+        let index0: Index<Entity> = entities.insert(Entity { hp: 10 });
+        assert_eq!(entities.len(), 2);
+        assert_eq!(entities.capacity(), 4);
+        // filed from backwards
+        assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
+        assert_eq!(index0.gen(&entities), unsafe {
+            // second generation
+            NonZeroU32::new_unchecked(3)
+        });
     }
 }
