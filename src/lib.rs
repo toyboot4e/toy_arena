@@ -4,8 +4,8 @@ Extensible generational arena
 Goals: Tiny code. Non-goals: Extream memory efficiency.
 
 # Features
-* Distinct arena types with second type parameter to [`Aerna`]
-* Custom generation generator with second type parameter to [`Aerna`]
+* Distinct arena types with second type parameter to [`Arena`]
+* Custom generation generator with third type parameter to [`Arena`]
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -18,6 +18,9 @@ use std::{fmt::Debug, hash::Hash, marker::PhantomData, ops};
 
 use derivative::Derivative;
 use nonmax::*;
+
+/// Default generation generator
+pub type DefaultGen = PerSlot;
 
 /**
 Generational arena
@@ -37,7 +40,7 @@ be created [`PerSlot`] or [`PerArena`].
     Eq(bound = "T: PartialEq, <G as Gen>::PerArena: Eq, <G as Gen>::PerSlot: PartialEq"),
     Hash(bound = "T: Hash, <G as Gen>::PerArena: Hash, <G as Gen>::PerSlot: Hash")
 )]
-pub struct Arena<T, D = (), G: Gen = PerSlot> {
+pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     data: Vec<Entry<T, G>>,
     /// All of free slots
     free: Vec<Slot>,
@@ -60,7 +63,7 @@ pub struct Arena<T, D = (), G: Gen = PerSlot> {
 //     Eq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
 //     Hash(bound = "&'a mut Arena<T, D, G>: Hash")
 // )]
-// pub struct ArenaCell<'a, T, , D = (),G: Gen = PerSlot> {
+// pub struct ArenaCell<'a, T, , D = (),G: Gen = DefaultGen> {
 //     log: smallvec::SmallVec<[Borrow; 2]>,
 //     arena: &'a mut Arena<T, D, G>,
 // }
@@ -92,7 +95,7 @@ so we can identify the original item from replaced item.
     Eq(bound = "<G as Gen>::Generation: PartialEq"),
     Hash(bound = "<G as Gen>::Generation: Hash")
 )]
-pub struct Index<T, D = (), G: Gen = PerSlot> {
+pub struct Index<T, D = (), G: Gen = DefaultGen> {
     slot: Slot,
     gen: G::Generation,
     _ty: PhantomData<T>,
@@ -119,10 +122,10 @@ impl<T, D, G: Gen> Index<T, D, G> {
     Eq(bound = "Option<T>: PartialEq, <G as Gen>::PerSlot: PartialEq"),
     Hash(bound = "Option<T>: Hash, <G as Gen>::PerSlot: Hash")
 )]
-struct Entry<T, G: Gen> {
-    data: Option<T>,
+struct Entry<T, G: Gen = DefaultGen> {
     /// It's `()` if the generator is per-arena.
     gen: G::PerSlot,
+    data: Option<T>,
 }
 
 type RawSlot = u32;
@@ -285,7 +288,7 @@ where
         }
     }
 
-    pub fn insert(&mut self, data: T) -> Index<T, G, D> {
+    pub fn insert(&mut self, data: T) -> Index<T, D, G> {
         let slot = self.next_free_slot();
 
         let entry = &mut self.data[slot.raw as usize];
@@ -309,7 +312,17 @@ mod test {
 
     #[test]
     fn test_size() {
+        // `Index` is 8 bytes long by default
         assert_eq!(mem::size_of::<Index<()>>(), mem::size_of::<u32>() * 2);
+
+        // the nonmax type reduces the optional index size
+        assert_eq!(
+            mem::size_of::<Option<Index<()>>>(),
+            mem::size_of::<Index<()>>()
+        );
+
+        // unfortunatelly, entry is a bit too long with occupied tag
+        assert_eq!(mem::size_of::<Entry<u32>>(), 12);
     }
 
     #[test]
