@@ -14,9 +14,13 @@ NOTE: While arena requires strict safety, `toy_arena` is not so tested (yet).
 * [thunderdome](https://docs.rs/thunderdome/latest)
 */
 
-use std::{fmt::Debug, hash::Hash, marker::PhantomData, num::*, ops};
+#[cfg(test)]
+mod test;
+
+use std::{fmt::Debug, hash::Hash, iter::FusedIterator, marker::PhantomData, num::*, ops};
 
 use derivative::Derivative;
+// use smallvec::SmallVec;
 
 /// Default generation generator
 pub type DefaultGen = PerSlot;
@@ -128,7 +132,7 @@ struct Entry<T, G: Gen = DefaultGen> {
 type RawSlot = u32;
 
 /// Memory location in [`Arena`]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Slot {
     raw: RawSlot,
@@ -347,11 +351,38 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let gen = G::current(&self.gen, &entry.gen);
         if gen != index.gen || entry.data.is_none() {
             // generation mismatch: can't invalidate
-            Some(Index::new(index.slot, gen))
+            Some(Index::new(index.slot, G::current(&self.gen, &entry.gen)))
         } else {
             entry.data = None;
             self.len.dec();
             self.free.push(index.slot);
+            None
+        }
+    }
+
+    pub fn remove_by_slot(&mut self, slot: Slot) -> Option<T> {
+        let entry = &mut self.entries[slot.raw as usize];
+        if entry.data.is_none() {
+            // generation mistmatch: can't remove
+            None
+        } else {
+            let taken = entry.data.take();
+            assert!(taken.is_some());
+            self.len.dec();
+            self.free.push(slot);
+            taken
+        }
+    }
+
+    pub fn invalidate_by_slot(&mut self, slot: Slot) -> Option<Index<T, D, G>> {
+        let entry = &mut self.entries[slot.raw as usize];
+        if entry.data.is_none() {
+            // generation mismatch: can't invalidate
+            Some(Index::new(slot, G::current(&self.gen, &entry.gen)))
+        } else {
+            entry.data = None;
+            self.len.dec();
+            self.free.push(slot);
             None
         }
     }
@@ -439,8 +470,11 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         self.entries.iter_mut().flat_map(|e| e.data.as_mut())
     }
 
-    pub fn drain<R: ops::RangeBounds<usize>>(&mut self, rng: R) -> impl Iterator<Item = T> + '_ {
-        self.entries.drain(rng).filter_map(|e| e.data)
+    pub fn drain(&mut self) -> impl Iterator<Item = T> + '_ {
+        Drain {
+            arena: self,
+            slot: Slot::default(),
+        }
     }
 
     pub fn retain<F: FnMut(Index<T, D, G>, &mut T) -> bool>(&mut self, mut pred: F) {
@@ -457,6 +491,40 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 }
 
+struct Drain<'a, T, D, G: Gen> {
+    arena: &'a mut Arena<T, D, G>,
+    slot: Slot,
+}
+
+impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        while (self.slot.raw as usize) < self.arena.entries.len() {
+            let data = self.arena.remove_by_slot(self.slot.clone());
+            if data.is_some() {
+                return data;
+            }
+            self.slot.inc();
+        }
+
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.arena.len(), Some(self.arena.len()))
+    }
+}
+
+impl<'a, T, D, G: Gen> FusedIterator for Drain<'a, T, D, G> {}
+impl<'a, T, D, G: Gen> ExactSizeIterator for Drain<'a, T, D, G> {}
+
+impl<'a, T, D, G: Gen> Drop for Drain<'a, T, D, G> {
+    // Continue iterating/dropping if there are any elements left.
+    fn drop(&mut self) {
+        self.for_each(drop);
+    }
+}
+
 impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G> {
     type Output = T;
     fn index(&self, index: Index<T, D, G>) -> &Self::Output {
@@ -467,80 +535,5 @@ impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G> {
 impl<T, D, G: Gen> ops::IndexMut<Index<T, D, G>> for Arena<T, D, G> {
     fn index_mut(&mut self, index: Index<T, D, G>) -> &mut Self::Output {
         self.get_mut(index).unwrap()
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use std::mem;
-
-    #[test]
-    fn test_size() {
-        // `Index` is 8 bytes long by default
-        assert_eq!(mem::size_of::<Index<()>>(), mem::size_of::<u32>() * 2);
-
-        // the nonzero type reduces the optional index size
-        assert_eq!(
-            mem::size_of::<Option<Index<()>>>(),
-            mem::size_of::<Index<()>>()
-        );
-
-        // unfortunatelly, entry is a bit too long with occupied tag
-        assert_eq!(mem::size_of::<Entry<u32>>(), 12);
-    }
-
-    #[test]
-    fn test_capacity() {
-        #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-        pub struct Entity {
-            pub hp: usize,
-        }
-
-        let mut entities = Arena::<Entity>::with_capacity(2);
-        assert_eq!(entities.len(), 0);
-        assert_eq!(entities.capacity(), 2);
-
-        let index0: Index<Entity> = entities.insert(Entity { hp: 0 });
-        assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
-        assert_eq!(entities.len(), 1);
-        assert_eq!(entities.capacity(), 2);
-        assert_eq!(index0.gen(&entities), unsafe {
-            // first generation
-            NonZeroU32::new_unchecked(2)
-        });
-
-        let index1: Index<Entity> = entities.insert(Entity { hp: 1 });
-        assert_eq!(index1.slot(), unsafe { Slot::from_raw(1) });
-        assert_eq!(entities.len(), 2);
-
-        let removed_entity = entities.remove(index0);
-        assert_eq!(entities.len(), 1);
-        assert_eq!(removed_entity, Some(Entity { hp: 0 }));
-
-        let index0: Index<Entity> = entities.insert(Entity { hp: 10 });
-        assert_eq!(entities.len(), 2);
-        assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
-        assert_eq!(index0.gen(&entities), unsafe {
-            // second generation
-            NonZeroU32::new_unchecked(3)
-        });
-
-        // extend
-        let index2: Index<Entity> = entities.insert(Entity { hp: 2 });
-        assert_eq!(index2.slot(), unsafe { Slot::from_raw(2) });
-        assert_eq!(entities.len(), 3);
-        assert_eq!(entities.capacity(), 4);
-
-        let index3: Index<Entity> = entities.insert(Entity { hp: 3 });
-        assert_eq!(index3.slot(), unsafe { Slot::from_raw(3) });
-        assert_eq!(entities.len(), 4);
-        assert_eq!(entities.capacity(), 4);
-
-        // extend
-        let index4: Index<Entity> = entities.insert(Entity { hp: 4 });
-        assert_eq!(index4.slot(), unsafe { Slot::from_raw(4) });
-        assert_eq!(entities.len(), 5);
-        assert_eq!(entities.capacity(), 8);
     }
 }
