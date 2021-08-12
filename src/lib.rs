@@ -29,13 +29,11 @@ be created [`PerSlot`] or [`PerArena`].
 */
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = "T: Debug, <G as Gen>::PerArena: Debug, <G as Gen>::PerSlot: Debug"),
-    Clone(bound = "T: Clone, <G as Gen>::PerArena: Clone, <G as Gen>::PerSlot: Clone"),
-    PartialEq(
-        bound = "T: PartialEq, <G as Gen>::PerArena: PartialEq, <G as Gen>::PerSlot: PartialEq"
-    ),
-    Eq(bound = "T: PartialEq, <G as Gen>::PerArena: Eq, <G as Gen>::PerSlot: PartialEq"),
-    Hash(bound = "T: Hash, <G as Gen>::PerArena: Hash, <G as Gen>::PerSlot: Hash")
+    Debug(bound = "T: Debug"),
+    Clone(bound = "T: Clone"),
+    PartialEq(bound = "T: PartialEq"),
+    Eq(bound = "T: PartialEq"),
+    Hash(bound = "T: Hash")
 )]
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     data: Vec<Entry<T, G>>,
@@ -85,13 +83,6 @@ slot is already replaced by another value, the generation of the [`Entry`] is al
 so we can identify the original item from replaced item.
 */
 #[derive(Derivative)]
-#[derivative(
-    Debug(bound = "<G as Gen>::Generation: Debug"),
-    Clone(bound = "<G as Gen>::Generation: Clone"),
-    PartialEq(bound = "<G as Gen>::Generation: PartialEq"),
-    Eq(bound = "<G as Gen>::Generation: PartialEq"),
-    Hash(bound = "<G as Gen>::Generation: Hash")
-)]
 pub struct Index<T, D = (), G: Gen = DefaultGen> {
     slot: Slot,
     gen: G::Generation,
@@ -112,12 +103,11 @@ impl<T, D, G: Gen> Index<T, D, G> {
 
 #[derive(Derivative)]
 #[derivative(
-    Default(bound = "<G as Gen>::PerSlot: Default"),
-    Debug(bound = "Option<T>: Debug, <G as Gen>::PerSlot: Debug"),
-    Clone(bound = "Option<T>: Clone, <G as Gen>::PerSlot: Clone"),
-    PartialEq(bound = "Option<T>: PartialEq, <G as Gen>::PerSlot: PartialEq"),
-    Eq(bound = "Option<T>: PartialEq, <G as Gen>::PerSlot: PartialEq"),
-    Hash(bound = "Option<T>: Hash, <G as Gen>::PerSlot: Hash")
+    Debug(bound = "Option<T>: Debug"),
+    Clone(bound = "Option<T>: Clone"),
+    PartialEq(bound = "Option<T>: PartialEq"),
+    Eq(bound = "Option<T>: PartialEq"),
+    Hash(bound = "Option<T>: Hash")
 )]
 struct Entry<T, G: Gen = DefaultGen> {
     /// It's `()` if the generator is per-arena.
@@ -244,21 +234,13 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 }
 
-impl<T, D, G: Gen> Default for Arena<T, D, G>
-where
-    G::PerSlot: Default,
-    G::PerArena: Default,
-{
+impl<T, D, G: Gen> Default for Arena<T, D, G> {
     fn default() -> Self {
         Self::with_capacity(4)
     }
 }
 
-impl<T, D, G: Gen> Arena<T, D, G>
-where
-    G::PerSlot: Default,
-    G::PerArena: Default,
-{
+impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -292,10 +274,7 @@ where
     }
 }
 
-impl<T, D, G: Gen> Arena<T, D, G>
-where
-    G::PerSlot: Default,
-{
+impl<T, D, G: Gen> Arena<T, D, G> {
     fn next_free_slot(&mut self) -> Slot {
         if let Some(slot) = self.free.pop() {
             slot
@@ -331,10 +310,7 @@ where
     }
 }
 
-impl<T, D, G: Gen> Arena<T, D, G>
-where
-    G::Generation: PartialEq,
-{
+impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn contains(&self, index: Index<T, D, G>) -> bool {
         self.get(index).is_some()
     }
@@ -376,20 +352,14 @@ where
     }
 }
 
-impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G>
-where
-    G::Generation: PartialEq,
-{
+impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G> {
     type Output = T;
     fn index(&self, index: Index<T, D, G>) -> &Self::Output {
         self.get(index).unwrap()
     }
 }
 
-impl<T, D, G: Gen> ops::IndexMut<Index<T, D, G>> for Arena<T, D, G>
-where
-    G::Generation: PartialEq,
-{
+impl<T, D, G: Gen> ops::IndexMut<Index<T, D, G>> for Arena<T, D, G> {
     fn index_mut(&mut self, index: Index<T, D, G>) -> &mut Self::Output {
         self.get_mut(index).unwrap()
     }
