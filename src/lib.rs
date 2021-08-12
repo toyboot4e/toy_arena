@@ -39,7 +39,7 @@ be created [`PerSlot`] or [`PerArena`].
 )]
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
-    /// All of free slots
+    /// If `free` is empty, `entries[0..entries.len()]` is occupied
     free: Vec<Slot>,
     len: Slot,
     /// Per-arena generator. Zero-sized if we use [`PerArena`]
@@ -284,6 +284,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
 
         let free = (0..cap as RawSlot)
+            .rev()
             .map(|raw| Slot { raw })
             .collect::<Vec<_>>();
 
@@ -376,9 +377,12 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     fn extend(&mut self, new_cap: usize) {
         assert!(self.entries.capacity() < new_cap);
         assert!((new_cap as RawSlot) < RawSlot::MAX);
+
         let prev_cap = self.entries.len();
         self.entries.resize_with(new_cap, Self::default_entry);
-        for raw in prev_cap as RawSlot..new_cap as RawSlot {
+
+        // push in reverse (since the free stack is LIFO)
+        for raw in (prev_cap as RawSlot..new_cap as RawSlot).rev() {
             self.free.push(Slot { raw });
         }
     }
@@ -426,6 +430,12 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 }
 
+impl<T, D, G: Gen> Arena<T, D, G> {
+    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
+        self.entries.iter().flat_map(|e| e.data.as_ref())
+    }
+}
+
 impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G> {
     type Output = T;
     fn index(&self, index: Index<T, D, G>) -> &Self::Output {
@@ -466,14 +476,14 @@ mod test {
             pub hp: usize,
         }
 
-        let mut entities = Arena::<Entity>::with_capacity(1);
+        let mut entities = Arena::<Entity>::with_capacity(2);
         assert_eq!(entities.len(), 0);
-        assert_eq!(entities.capacity(), 1);
+        assert_eq!(entities.capacity(), 2);
 
         let index0: Index<Entity> = entities.insert(Entity { hp: 0 });
         assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
         assert_eq!(entities.len(), 1);
-        assert_eq!(entities.capacity(), 1);
+        assert_eq!(entities.capacity(), 2);
         assert_eq!(index0.gen(&entities), unsafe {
             // first generation
             NonZeroU32::new_unchecked(2)
@@ -482,21 +492,34 @@ mod test {
         let index1: Index<Entity> = entities.insert(Entity { hp: 1 });
         assert_eq!(index1.slot(), unsafe { Slot::from_raw(1) });
         assert_eq!(entities.len(), 2);
-        assert_eq!(entities.capacity(), 4); // same as vec
 
         let removed_entity = entities.remove(index0);
         assert_eq!(entities.len(), 1);
-        assert_eq!(entities.capacity(), 4);
         assert_eq!(removed_entity, Some(Entity { hp: 0 }));
 
         let index0: Index<Entity> = entities.insert(Entity { hp: 10 });
         assert_eq!(entities.len(), 2);
-        assert_eq!(entities.capacity(), 4);
-        // filed from backwards
         assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
         assert_eq!(index0.gen(&entities), unsafe {
             // second generation
             NonZeroU32::new_unchecked(3)
         });
+
+        // extend
+        let index2: Index<Entity> = entities.insert(Entity { hp: 2 });
+        assert_eq!(index2.slot(), unsafe { Slot::from_raw(2) });
+        assert_eq!(entities.len(), 3);
+        assert_eq!(entities.capacity(), 4);
+
+        let index3: Index<Entity> = entities.insert(Entity { hp: 3 });
+        assert_eq!(index3.slot(), unsafe { Slot::from_raw(3) });
+        assert_eq!(entities.len(), 4);
+        assert_eq!(entities.capacity(), 4);
+
+        // extend
+        let index4: Index<Entity> = entities.insert(Entity { hp: 4 });
+        assert_eq!(index4.slot(), unsafe { Slot::from_raw(4) });
+        assert_eq!(entities.len(), 5);
+        assert_eq!(entities.capacity(), 8);
     }
 }
