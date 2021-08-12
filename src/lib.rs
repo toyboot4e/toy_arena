@@ -86,11 +86,11 @@ API, so we added indirect bounds above
 */
 
 /**
-[`Slot`] + [`Generation`](Gen::Generation). Takes 8 bytes for [`DefaultGen`]
+[`Slot`] + [`Gen`]. Takes 8 bytes for [`DefaultGen`]
 
 Item in the [`Arena`] is located by [`Slot`] and identified by their generation. If the item at a
-slot is already replaced by another value, the generation of the [`Entry`] is already incremented,
-so we can identify the original item from replaced item.
+slot is already replaced by another value, the generation of the entry is already incremented, so we
+can identify the original item from replaced item.
 */
 #[derive(Derivative)]
 #[derivative(Debug, Clone, PartialEq, Eq, Hash)]
@@ -112,7 +112,7 @@ impl<T, D, G: Gen> Index<T, D, G> {
     }
 
     pub fn slot(&self) -> Slot {
-        self.slot.clone()
+        self.slot
     }
 }
 
@@ -139,6 +139,9 @@ pub struct Slot {
 }
 
 impl Slot {
+    /// Creates slot from raw value
+    /// # Safety
+    /// if the raw slot > arena.len(), use of the slot will cause panic.
     pub unsafe fn from_raw(raw: RawSlot) -> Self {
         Self { raw }
     }

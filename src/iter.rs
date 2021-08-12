@@ -1,3 +1,7 @@
+/*!
+`toy_arena` terator types
+*/
+
 use crate::*;
 
 pub struct Drain<'a, T, D, G: Gen> {
@@ -9,7 +13,7 @@ impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         while (self.slot.raw as usize) < self.arena.entries.len() {
-            let slot = self.slot.clone();
+            let slot = self.slot;
             self.slot.inc();
 
             let data = self.arena.remove_by_slot(slot);
