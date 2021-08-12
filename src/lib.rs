@@ -1,7 +1,7 @@
 /*!
-Extensible generational arena
+Extensible generational arena for various uses
 
-Goals: Tiny code. Non-goals: Extream memory efficiency.
+Goals: Tiny code and handy use. Non-goals: Extream memory efficiency and super good performance.
 
 # Features
 * Distinct arena types with second type parameter to [`Arena`]
@@ -156,6 +156,7 @@ pub trait Gen {
     type PerArena;
     /// Per-slot generation generator
     type PerSlot;
+    fn current(per_arena: &Self::PerArena, per_slot: &Self::PerSlot) -> Self::Generation;
     fn next(per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation;
 }
 
@@ -179,6 +180,9 @@ macro_rules! impl_generators {
             type Generation = $nonmax;
             type PerArena = ();
             type PerSlot = Self::Generation;
+            fn current(_per_arena: &Self::PerArena, per_slot: &Self::PerSlot) -> Self::Generation {
+                per_slot.clone()
+            }
             fn next(_per_arena: &mut Self::PerArena, per_slot: &mut Self::PerSlot) -> Self::Generation {
                 let raw = per_slot.get();
                 let new = $nonmax::new(raw + 1).expect("generation exceed");
@@ -191,6 +195,9 @@ macro_rules! impl_generators {
             type Generation = $nonmax;
             type PerArena = Self::Generation;
             type PerSlot = ();
+            fn current(per_arena: &Self::PerArena, _per_slot: &Self::PerSlot) -> Self::Generation {
+                per_arena.clone()
+            }
             fn next(per_arena: &mut Self::PerArena, _per_slot: &mut Self::PerSlot) -> Self::Generation {
                 let raw = per_arena.get();
                 let new = $nonmax::new(raw + 1).expect("generation exceed");
@@ -213,6 +220,10 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// Number of items in this arena
     pub fn len(&self) -> usize {
         self.len.raw as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Capacity of the backing vec
@@ -299,9 +310,50 @@ where
         let gen = G::next(&mut self.gen, &mut entry.gen);
         Index::<T, D, G>::new(slot, gen)
     }
+}
+
+impl<T, D, G: Gen> Arena<T, D, G>
+where
+    G::Generation: PartialEq,
+{
+    pub fn contains(&self, index: Index<T, D, G>) -> bool {
+        self.get(index).is_some()
+    }
 
     pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
-        todo!()
+        self.data.get(index.slot.raw as usize).and_then(|e| {
+            let gen = G::current(&self.gen, &e.gen);
+            if gen == index.gen {
+                e.data.as_ref()
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn get_mut(&mut self, index: Index<T, D, G>) -> Option<&mut T> {
+        // NOTE: Rust closure is not (yet) smart enough to borrow only some fileds of struct
+        let (data, gen) = (&mut self.data, &self.gen);
+        data.get_mut(index.slot.raw as usize).and_then(|e| {
+            let gen = G::current(&gen, &e.gen);
+            if gen == index.gen {
+                e.data.as_mut()
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
+        self.data
+            .get(slot.raw as usize)
+            .and_then(|e| e.data.as_ref())
+    }
+
+    pub fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
+        self.data
+            .get_mut(slot.raw as usize)
+            .and_then(|e| e.data.as_mut())
     }
 }
 
@@ -335,16 +387,16 @@ mod test {
         let mut entities = Arena::<Entity>::with_capacity(1);
         assert_eq!(entities.len(), 0);
         assert_eq!(entities.capacity(), 1);
+        assert_eq!(entities.free.len() + entities.len(), entities.data.len());
 
         let _index: Index<Entity> = entities.insert(Entity { hp: 0 });
-        println!("{:?}", entities);
         assert_eq!(entities.len(), 1);
         assert_eq!(entities.capacity(), 1);
+        assert_eq!(entities.free.len() + entities.len(), entities.data.len());
 
         let _index2: Index<Entity> = entities.insert(Entity { hp: 1 });
-        println!("{:?}", entities);
-        println!("cap: {}", entities.capacity());
         assert_eq!(entities.len(), 2);
         assert_eq!(entities.capacity(), 4); // same as vec
+        assert_eq!(entities.free.len() + entities.len(), entities.data.len());
     }
 }
