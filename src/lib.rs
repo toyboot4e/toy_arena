@@ -1,13 +1,13 @@
 /*!
 Extensible generational arena for various uses
 
-Goals: Tiny code and handy use. Non-goals: Extream memory efficiency and super good performance.
+Goals: Tiny code and real use. Non-goals: Extream memory efficiency and super good performance.
 
 NOTE: While arena requires strict safety, `toy_arena` is not so tested (yet).
 
 # Features
-* Distinct arena types with second type parameter to [`Arena`]
-* Custom generation generator with third type parameter to [`Arena`]
+* Distinct arena types (second type parameter of [`Arena<T, D, G>`])
+* Custom generation generator (third type parameter of [`Arena<T, D, G>`])
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -283,9 +283,13 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             data.push(Self::default_entry());
         }
 
+        let free = (0..cap as RawSlot)
+            .map(|raw| Slot { raw })
+            .collect::<Vec<_>>();
+
         Self {
             entries: data,
-            free: Vec::new(),
+            free,
             len: Slot::default(),
             gen: G::default_per_arena(),
             _distinct: PhantomData,
@@ -298,20 +302,20 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             gen: G::default_per_slot(),
         }
     }
+}
 
-    /*
-    State handling (length and free slots)
-    */
-
+// State handling (length and free slots)
+impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn insert(&mut self, data: T) -> Index<T, D, G> {
         let slot = self.next_free_slot();
+        let gen = {
+            let entry = &mut self.entries[slot.raw as usize];
+            assert!(entry.data.is_none(), "free slot occupied?");
+            entry.data = Some(data);
+            self.len.inc();
+            G::next(&mut self.gen, &mut entry.gen)
+        };
 
-        let entry = &mut self.entries[slot.raw as usize];
-        assert!(entry.data.is_none(), "free slot occupied?");
-        entry.data = Some(data);
-        self.len.inc();
-
-        let gen = G::next(&mut self.gen, &mut entry.gen);
         Index::<T, D, G>::new(slot, gen)
     }
 
@@ -356,6 +360,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             slot
         } else if self.entries.len() < self.entries.capacity() {
             let slot = Slot {
+                // NOTE: We know entries[0..entries.len()] is fullfiled
+                // because `free` is fullfilled on init
                 raw: self.entries.len() as RawSlot,
             };
             self.entries.push(Self::default_entry());
@@ -370,7 +376,11 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     fn extend(&mut self, new_cap: usize) {
         assert!(self.entries.capacity() < new_cap);
         assert!((new_cap as RawSlot) < RawSlot::MAX);
+        let prev_cap = self.entries.len();
         self.entries.resize_with(new_cap, Self::default_entry);
+        for raw in prev_cap as RawSlot..new_cap as RawSlot {
+            self.free.push(Slot { raw });
+        }
     }
 }
 
