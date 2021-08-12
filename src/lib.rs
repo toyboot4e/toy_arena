@@ -7,22 +7,29 @@ NOTE: While arena requires strict safety, `toy_arena` is not so tested (yet).
 
 # Features
 * Distinct arena types (second type parameter of [`Arena<T, D, G>`])
-* Custom generation generator (third type parameter of [`Arena<T, D, G>`])
+* Customizable generation (third type parameter of [`Arena<T, D, G>`])
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
 * [thunderdome](https://docs.rs/thunderdome/latest)
 */
 
+// use closures to implement `IntoIter`
+#![feature(type_alias_impl_trait)]
+
+pub mod iter;
+
 #[cfg(test)]
 mod test;
 
-use std::{fmt::Debug, hash::Hash, iter::*, marker::PhantomData, num::*, ops, slice::Iter};
+use std::{fmt::Debug, hash::Hash, iter::*, marker::PhantomData, num::*, ops};
 
 use derivative::Derivative;
 // use smallvec::SmallVec;
 
-/// Default generation generator
+use crate::iter::*;
+
+/// Default generation type
 pub type DefaultGen = NonZeroU32;
 
 /**
@@ -41,9 +48,10 @@ original values (and see if the original value is still there or alreadly replac
 )]
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
+    /// Number of occupied entries
+    len: Slot,
     /// If `free` is empty, `entries[0..entries.len()]` is occupied
     free: Vec<Slot>,
-    len: Slot,
     /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
     pub _distinct: PhantomData<D>,
@@ -78,7 +86,7 @@ API, so we added indirect bounds above
 */
 
 /**
-[`Slot`] + [`Generation`](Gen::Generation). Takes 8 bytes by default
+[`Slot`] + [`Generation`](Gen::Generation). Takes 8 bytes for [`DefaultGen`]
 
 Item in the [`Arena`] is located by [`Slot`] and identified by their generation. If the item at a
 slot is already replaced by another value, the generation of the [`Entry`] is already incremented,
@@ -123,7 +131,7 @@ struct Entry<T, G: Gen = DefaultGen> {
 
 type RawSlot = u32;
 
-/// Memory location in [`Arena`]
+/// Index of the backing `Vec` in [`Arena`]
 #[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Slot {
@@ -156,8 +164,8 @@ impl Slot {
     }
 }
 
-/// Generator, one of the unsized `NonZero` types
-pub trait Gen: Debug + Clone + PartialEq + Eq + Hash {
+/// Generation type, one of the unsized `NonZero` types
+pub trait Gen: Debug + Clone + PartialEq + Eq + Hash + 'static {
     fn default_gen() -> Self;
     fn next(&mut self) -> Self;
 }
@@ -395,24 +403,43 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 }
 
 impl<T, D, G: Gen> Arena<T, D, G> {
-    pub fn iter(&self) -> impl Iterator<Item = (Index<T, D, G>, &T)> + '_ {
-        self.entries
-            .iter()
-            .enumerate()
-            .filter(|(_i, e)| e.data.is_some())
-            .map(|(i, e)| {
-                (
-                    Index::new(Slot { raw: i as RawSlot }, e.gen.clone()),
-                    e.data.as_ref().unwrap(),
-                )
-            })
+    /// (Index, &T)
+    pub fn iter(&self) -> IndexedItems<T, D, G> {
+        IndexedItems {
+            arena: self,
+            slot: Slot::default(),
+            n_visited: 0,
+        }
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
-        self.entries.iter_mut().flat_map(|e| e.data.as_mut())
+    /// (Index, &mut T)
+    pub fn iter_mut(&mut self) -> IndexedItemsMut<T, D, G> {
+        IndexedItemsMut {
+            arena: self,
+            slot: Slot::default(),
+            n_visited: 0,
+        }
     }
 
-    pub fn drain(&mut self) -> impl Iterator<Item = T> + '_ {
+    /// &T
+    pub fn items(&self) -> Items<T, D, G> {
+        Items {
+            arena: self,
+            slot: Slot::default(),
+            n_visited: 0,
+        }
+    }
+
+    /// &mut T
+    pub fn items_mut(&mut self) -> ItemsMut<T, D, G> {
+        ItemsMut {
+            arena: self,
+            slot: Slot::default(),
+            n_visited: 0,
+        }
+    }
+
+    pub fn drain(&mut self) -> Drain<T, D, G> {
         Drain {
             arena: self,
             slot: Slot::default(),
@@ -436,49 +463,6 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 }
 
-// impl<'a, T, D, G: Gen> IntoIterator for &'a Arena<T, D, G> {
-//     type Item = (Index<T, D, G>, &'a T);
-//     type IntoIter =
-//         FlatMap<Iter<'a, Entry<T, G>>, Option<&'a T>, impl FnMut(&'a Entry<T, G>) -> Option<&'a T>>;
-//     fn into_iter(self) -> Self::IntoIter {
-//         self.iter()
-//     }
-// }
-
-struct Drain<'a, T, D, G: Gen> {
-    arena: &'a mut Arena<T, D, G>,
-    slot: Slot,
-}
-
-impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
-    type Item = T;
-    fn next(&mut self) -> Option<T> {
-        while (self.slot.raw as usize) < self.arena.entries.len() {
-            let data = self.arena.remove_by_slot(self.slot.clone());
-            if data.is_some() {
-                return data;
-            }
-            self.slot.inc();
-        }
-
-        None
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.arena.len(), Some(self.arena.len()))
-    }
-}
-
-impl<'a, T, D, G: Gen> FusedIterator for Drain<'a, T, D, G> {}
-impl<'a, T, D, G: Gen> ExactSizeIterator for Drain<'a, T, D, G> {}
-
-impl<'a, T, D, G: Gen> Drop for Drain<'a, T, D, G> {
-    // Continue iterating/dropping if there are any elements left.
-    fn drop(&mut self) {
-        self.for_each(drop);
-    }
-}
-
 impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G> {
     type Output = T;
     fn index(&self, index: Index<T, D, G>) -> &Self::Output {
@@ -489,5 +473,21 @@ impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G> {
 impl<T, D, G: Gen> ops::IndexMut<Index<T, D, G>> for Arena<T, D, G> {
     fn index_mut(&mut self, index: Index<T, D, G>) -> &mut Self::Output {
         self.get_mut(index).unwrap()
+    }
+}
+
+impl<'a, T, D, G: Gen> IntoIterator for &'a Arena<T, D, G> {
+    type IntoIter = IndexedItems<'a, T, D, G>;
+    type Item = <Self::IntoIter as Iterator>::Item;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T, D, G: Gen> IntoIterator for &'a mut Arena<T, D, G> {
+    type IntoIter = IndexedItemsMut<'a, T, D, G>;
+    type Item = <Self::IntoIter as Iterator>::Item;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
