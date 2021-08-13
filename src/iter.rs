@@ -224,7 +224,7 @@ where
         self.arena.get(self.index).unwrap()
     }
 
-    pub fn get_mut(&mut self) -> &T {
+    pub fn get_mut(&mut self) -> &mut T {
         self.arena.get_mut(self.index).unwrap()
     }
 
