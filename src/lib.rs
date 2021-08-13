@@ -492,6 +492,18 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             i += 1;
         }
     }
+
+    /// Returns an iterator of slots. You can modify the arena during the iteration, don't
+    /// remove/invalidate or insert new items (or the iteration may be complicated).
+    pub fn entries_mut(mut self: &mut Self) -> EntryBindsMut<T, D, G> {
+        let n_items = self.n_items.raw as usize;
+        EntryBindsMut {
+            arena: self,
+            slot: Slot::default(),
+            n_items,
+            n_visited: 0,
+        }
+    }
 }
 
 impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G> {

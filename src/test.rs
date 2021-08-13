@@ -111,9 +111,27 @@ fn retain() {
 
     arena.retain(|_index, &mut i| i % 2 == 1);
 
-    for (_index, data) in arena.iter() {
-        assert_eq!(data % 2, 1);
+    assert!(arena.items().all(|data| data % 2 == 1));
+    assert_eq!(arena.len(), 50);
+}
+
+#[test]
+fn entry_bind() {
+    let mut arena = Arena::<i32>::new();
+
+    for i in 0..100 {
+        arena.insert(i);
     }
 
-    assert_eq!(arena.len(), 50);
+    // simulate `drain_filter::<Vec<_>>()`
+    let mut drain = Vec::new();
+    for entry in arena.entries_mut() {
+        if entry.get() % 2 == 0 {
+            let data = entry.remove();
+            drain.push(data);
+        }
+    }
+
+    assert!(drain.iter().all(|data| data % 2 == 0));
+    assert!(arena.items().all(|data| data % 2 == 1));
 }
