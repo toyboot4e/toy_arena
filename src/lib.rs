@@ -57,9 +57,30 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     pub _distinct: PhantomData<D>,
 }
 
+/* Note on `dervative` use:
+We went to implement std traits only when all the fields implement that trait.
+We can add `where field: Trait` bound for each field, but it exposes `Entry` type to the public
+API, so we added indirect bounds above
+*/
+
+#[derive(Derivative)]
+#[derivative(
+    Debug(bound = "Option<T>: Debug"),
+    Clone(bound = "Option<T>: Clone"),
+    PartialEq(bound = "Option<T>: PartialEq"),
+    Eq(bound = "Option<T>: PartialEq"),
+    Hash(bound = "Option<T>: Hash")
+)]
+struct Entry<T, G: Gen = DefaultGen> {
+    gen: G,
+    data: Option<T>,
+}
+
 /**
-Mutable access to multiple items in [`Arena`] at the cost of run-time check. Also the cell does NOT
-track drops, so you can't borrow it anymore if you mutably borrow an item.
+Mutable access to multiple items in [`Arena`] at the cost of runtime check. Note that the cell does
+**not track drops**, so you can't borrow an item once after you borrow it mutably.
+
+Virtually, `ArenaCell` casts `Arena<T>` to `Arena<RefCell<T>>`, with more restriction at runtime.
 */
 #[derive(Derivative)]
 #[derivative(
@@ -79,49 +100,6 @@ enum Borrow {
     Mutable,
     Immutable,
 }
-
-impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
-    fn new(arena: &'a mut Arena<T, D, G>) -> Self {
-        Self {
-            arena,
-            log: Default::default(),
-        }
-    }
-
-    fn state(&self, slot: Slot) -> Option<Borrow> {
-        self.log.iter().find(|(s, _b)| *s == slot).map(|(_s, b)| *b)
-    }
-
-    pub fn contains(&self, index: Index<T, D, G>) -> bool {
-        assert!(self.state(index.slot) != Some(Borrow::Mutable));
-        self.arena.contains(index)
-    }
-
-    pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
-        self.get_by_slot(index.slot)
-    }
-
-    pub fn get_mut(&self, index: Index<T, D, G>) -> Option<&mut T> {
-        self.get_mut_by_slot(index.slot)
-    }
-
-    pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
-        assert!(self.state(slot) != Some(Borrow::Mutable));
-        self.arena.get_by_slot(slot)
-    }
-
-    pub fn get_mut_by_slot(&self, slot: Slot) -> Option<&mut T> {
-        assert!(self.state(slot).is_none());
-        let arena = unsafe { &mut *(self.arena as *const _ as *mut Arena<T, D, G>) };
-        arena.get_mut_by_slot(slot)
-    }
-}
-
-/* `dervative`:
-We went to implement std traits only when all the fields implement that trait.
-We can add `where field: Trait` bound for each field, but it exposes `Entry` type to the public
-API, so we added indirect bounds above
-*/
 
 /**
 [`Slot`] + [`Gen`]. Takes 8 bytes for [`DefaultGen`]
@@ -152,19 +130,6 @@ impl<T, D, G: Gen> Index<T, D, G> {
     pub fn slot(&self) -> Slot {
         self.slot
     }
-}
-
-#[derive(Derivative)]
-#[derivative(
-    Debug(bound = "Option<T>: Debug"),
-    Clone(bound = "Option<T>: Clone"),
-    PartialEq(bound = "Option<T>: PartialEq"),
-    Eq(bound = "Option<T>: PartialEq"),
-    Hash(bound = "Option<T>: Hash")
-)]
-struct Entry<T, G: Gen = DefaultGen> {
-    gen: G,
-    data: Option<T>,
 }
 
 type RawSlot = u32;
@@ -534,5 +499,42 @@ impl<'a, T, D, G: Gen> IntoIterator for &'a mut Arena<T, D, G> {
     type Item = <Self::IntoIter as Iterator>::Item;
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
+    }
+}
+
+impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
+    fn new(arena: &'a mut Arena<T, D, G>) -> Self {
+        Self {
+            arena,
+            log: Default::default(),
+        }
+    }
+
+    fn state(&self, slot: Slot) -> Option<Borrow> {
+        self.log.iter().find(|(s, _b)| *s == slot).map(|(_s, b)| *b)
+    }
+
+    pub fn contains(&self, index: Index<T, D, G>) -> bool {
+        assert!(self.state(index.slot) != Some(Borrow::Mutable));
+        self.arena.contains(index)
+    }
+
+    pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
+        self.get_by_slot(index.slot)
+    }
+
+    pub fn get_mut(&self, index: Index<T, D, G>) -> Option<&mut T> {
+        self.get_mut_by_slot(index.slot)
+    }
+
+    pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
+        assert!(self.state(slot) != Some(Borrow::Mutable));
+        self.arena.get_by_slot(slot)
+    }
+
+    pub fn get_mut_by_slot(&self, slot: Slot) -> Option<&mut T> {
+        assert!(self.state(slot).is_none());
+        let arena = unsafe { &mut *(self.arena as *const _ as *mut Arena<T, D, G>) };
+        arena.get_mut_by_slot(slot)
     }
 }
