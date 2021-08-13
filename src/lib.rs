@@ -57,7 +57,7 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     free: Vec<Slot>,
     /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
-    pub _distinct: PhantomData<D>,
+    _distinct: PhantomData<D>,
 }
 
 /* Note on `dervative` use:
@@ -173,7 +173,7 @@ impl Slot {
 }
 
 /// Generation type, one of the unsized `NonZero` types in [`std::num`]
-pub trait Gen: Debug + Clone + PartialEq + Eq + Hash + 'static {
+pub trait Gen: Debug + Clone + Copy + PartialEq + Eq + Hash + 'static {
     fn default_gen() -> Self;
     fn next(&mut self) -> Self;
 }
@@ -308,6 +308,16 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             self.free.push(index.slot);
             None
         }
+    }
+
+    pub fn replace(&mut self, index: Index<T, D, G>, new: T) -> Index<T, D, G> {
+        // The generation must much to the existing entry:
+        assert!(self.invalidate(index).is_none());
+        // This operation must have pushed the slot onto the `free` stack,
+        // and re-insert the item to the same slot:
+        let new_index = self.insert(new);
+        assert_eq!(new_index.slot, index.slot);
+        new_index
     }
 
     pub fn remove_by_slot(&mut self, slot: Slot) -> Option<T> {
