@@ -47,12 +47,14 @@ let e2 = entities.insert(EntityModel { hp: 1 });
 
 let cell = entities.cell();
 
+// first mutable borrow:
 let e1_mut = cell.get_mut(e1).unwrap();
 e1_mut.hp += 10;
 
-// panics on second borrow:
+// second borrow of the same item results in panic at runtime:
 // let e1_immutable = cell.get(e1).unwrap();
 
+// second mutable borrow of another item is allowed:
 let e2_mut = cell.get_mut(e2).unwrap();
 e2_mut.hp += 10;
 
