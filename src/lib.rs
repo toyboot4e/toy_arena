@@ -535,6 +535,18 @@ impl<'a, T, D, G: Gen> IntoIterator for &'a mut Arena<T, D, G> {
     }
 }
 
+impl<T, D, G: Gen> FromIterator<T> for Arena<T, D, G> {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+    {
+        let mut arena = Self::new();
+        for data in iter {
+            arena.insert(data);
+        }
+        arena
+    }
+}
 impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
     fn new(arena: &'a mut Arena<T, D, G>) -> Self {
         Self {

@@ -103,12 +103,7 @@ fn drain() {
 
 #[test]
 fn retain() {
-    let mut arena = Arena::<i32>::new();
-
-    for i in 0..100 {
-        arena.insert(i);
-    }
-
+    let mut arena = Arena::<i32>::from_iter(0..100);
     arena.retain(|_index, &mut i| i % 2 == 1);
 
     assert!(arena.items().all(|data| data % 2 == 1));
@@ -117,12 +112,7 @@ fn retain() {
 
 #[test]
 fn entry_bind() {
-    let mut arena = Arena::<i32>::new();
-
-    for i in 0..100 {
-        arena.insert(i);
-    }
-
+    let mut arena = Arena::<i32>::from_iter(0..100);
     // simulate `drain_filter::<Vec<_>>()`
     let mut drain = Vec::new();
     for entry in arena.entries_mut() {
