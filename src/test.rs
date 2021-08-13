@@ -125,3 +125,14 @@ fn entry_bind() {
     assert!(drain.iter().all(|data| data % 2 == 0));
     assert!(arena.items().all(|data| data % 2 == 1));
 }
+
+#[test]
+fn gen_macro() {
+    // NOTE: We can't remove the type parameter, unfortunatelly
+    let arena: Arena<i32> = arena![0i32, 10, 100];
+    let mut arena2 = Arena::<i32>::new();
+    arena2.insert(0);
+    arena2.insert(10);
+    arena2.insert(100);
+    assert_eq!(arena, arena2);
+}

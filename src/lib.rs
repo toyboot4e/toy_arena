@@ -547,6 +547,20 @@ impl<T, D, G: Gen> FromIterator<T> for Arena<T, D, G> {
         arena
     }
 }
+
+/// Creates an arena and inserts given values. Note that you might to have to annotate your
+/// `Arena<T>` when the type inference doesn't work well.
+#[macro_export]
+macro_rules! arena {
+    ($($data:expr),*) => {{
+        let mut arena = Arena::new();
+        $(
+            arena.insert($data);
+        )*
+        arena
+    }}
+}
+
 impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
     fn new(arena: &'a mut Arena<T, D, G>) -> Self {
         Self {
