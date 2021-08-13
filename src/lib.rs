@@ -207,22 +207,6 @@ macro_rules! impl_generators {
 
 impl_generators!(NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64);
 
-impl<T, D, G: Gen> Arena<T, D, G> {
-    /// Number of items in this arena
-    pub fn len(&self) -> usize {
-        self.n_items.raw as usize
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Capacity of the backing vec
-    pub fn capacity(&self) -> usize {
-        self.entries.capacity()
-    }
-}
-
 impl<T, D, G: Gen> Default for Arena<T, D, G> {
     fn default() -> Self {
         Self::with_capacity(4)
@@ -262,9 +246,23 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             gen: G::default_gen(),
         }
     }
+
+    /// Number of items in this arena
+    pub fn len(&self) -> usize {
+        self.n_items.raw as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Capacity of the backing vec
+    pub fn capacity(&self) -> usize {
+        self.entries.capacity()
+    }
 }
 
-// State handling (length and free slots)
+/// # Mutation
 impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn insert(&mut self, data: T) -> Index<T, D, G> {
         let slot = self.next_free_slot();
@@ -381,8 +379,26 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             self.free.push(Slot { raw });
         }
     }
+
+    /// Removes all items that don't satisfy the predicate
+    pub fn retain<F: FnMut(Index<T, D, G>, &mut T) -> bool>(&mut self, mut pred: F) {
+        let mut i = 0;
+        while i < self.entries.len() {
+            let entry = &mut self.entries[i];
+            if let Some(data) = &mut entry.data {
+                let slot = Slot { raw: i as RawSlot };
+                let index = Index::new(slot, entry.gen.clone());
+                if !pred(index.clone(), data) {
+                    self.remove(index).unwrap();
+                }
+            }
+
+            i += 1;
+        }
+    }
 }
 
+/// # Accessors
 impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn contains(&self, index: Index<T, D, G>) -> bool {
         self.get(index).is_some()
@@ -429,6 +445,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 }
 
+/// # Iterators
 impl<T, D, G: Gen> Arena<T, D, G> {
     /// `(Index, &T)`
     pub fn iter(&self) -> IndexedItems<T, D, G> {
@@ -473,23 +490,6 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         Drain {
             arena: self,
             slot: Slot::default(),
-        }
-    }
-
-    /// Removes all items that don't satisfy the predicate
-    pub fn retain<F: FnMut(Index<T, D, G>, &mut T) -> bool>(&mut self, mut pred: F) {
-        let mut i = 0;
-        while i < self.entries.len() {
-            let entry = &mut self.entries[i];
-            if let Some(data) = &mut entry.data {
-                let slot = Slot { raw: i as RawSlot };
-                let index = Index::new(slot, entry.gen.clone());
-                if !pred(index.clone(), data) {
-                    self.remove(index).unwrap();
-                }
-            }
-
-            i += 1;
         }
     }
 
