@@ -17,7 +17,11 @@ impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
             let slot = self.slot;
             self.slot.inc();
 
-            let data = self.arena.remove_by_slot(slot);
+            let index = match self.arena.index_at(slot) {
+                Some(i) => i,
+                None => continue,
+            };
+            let data = self.arena.remove(index);
             if data.is_some() {
                 return data;
             }

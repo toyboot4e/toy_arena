@@ -155,7 +155,7 @@ impl Slot {
         Self { raw }
     }
 
-    pub fn to_raw(&self) -> RawSlot {
+    pub fn raw(&self) -> RawSlot {
         self.raw
     }
 
@@ -322,33 +322,6 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         new_index
     }
 
-    pub fn remove_by_slot(&mut self, slot: Slot) -> Option<T> {
-        let entry = &mut self.entries[slot.raw as usize];
-        if entry.data.is_none() {
-            // generation mistmatch: can't remove
-            None
-        } else {
-            let taken = entry.data.take();
-            assert!(taken.is_some());
-            self.n_items.dec();
-            self.free.push(slot);
-            taken
-        }
-    }
-
-    pub fn invalidate_by_slot(&mut self, slot: Slot) -> Option<Index<T, D, G>> {
-        let entry = &mut self.entries[slot.raw as usize];
-        if entry.data.is_none() {
-            // generation mismatch: can't invalidate
-            Some(Index::new(slot, entry.gen.clone()))
-        } else {
-            entry.data = None;
-            self.n_items.dec();
-            self.free.push(slot);
-            None
-        }
-    }
-
     fn next_free_slot(&mut self) -> Slot {
         if let Some(slot) = self.free.pop() {
             slot
@@ -427,16 +400,15 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             })
     }
 
-    pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
-        self.entries
-            .get(slot.raw as usize)
-            .and_then(|e| e.data.as_ref())
-    }
-
-    pub fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
-        self.entries
-            .get_mut(slot.raw as usize)
-            .and_then(|e| e.data.as_mut())
+    /// Returns an [`Index`] if any data is there
+    pub fn index_at(&self, slot: Slot) -> Option<Index<T, D, G>> {
+        self.entries.get(slot.raw as usize).and_then(|e| {
+            if e.data.is_some() {
+                Some(Index::new(slot, e.gen))
+            } else {
+                None
+            }
+        })
     }
 
     /// See [`ArenaCell`] doc
@@ -582,14 +554,8 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
     }
 
     pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
-        self.get_by_slot(index.slot)
-    }
+        let slot = index.slot;
 
-    pub fn get_mut(&self, index: Index<T, D, G>) -> Option<&mut T> {
-        self.get_mut_by_slot(index.slot)
-    }
-
-    pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
         match self.state(slot) {
             None => self.log.borrow_mut().push((slot, Borrow::Immutable)),
             Some(Borrow::Immutable) => {}
@@ -598,10 +564,12 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
             }
         }
 
-        self.arena.get_by_slot(slot)
+        self.arena.get(index)
     }
 
-    pub fn get_mut_by_slot(&self, slot: Slot) -> Option<&mut T> {
+    pub fn get_mut(&self, index: Index<T, D, G>) -> Option<&mut T> {
+        let slot = index.slot;
+
         match self.state(slot) {
             None => self.log.borrow_mut().push((slot, Borrow::Mutable)),
             Some(Borrow::Immutable) => {
@@ -613,6 +581,6 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
         }
 
         let arena = unsafe { &mut *(self.arena as *const _ as *mut Arena<T, D, G>) };
-        arena.get_mut_by_slot(slot)
+        arena.get_mut(index)
     }
 }
