@@ -25,7 +25,7 @@ mod test;
 use std::{fmt::Debug, hash::Hash, iter::*, marker::PhantomData, num::*, ops};
 
 use derivative::Derivative;
-// use smallvec::SmallVec;
+use smallvec::SmallVec;
 
 use crate::iter::*;
 
@@ -57,27 +57,65 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     pub _distinct: PhantomData<D>,
 }
 
-// /**
-// Mutable access to multiple items in [`Arena`] at the cost of run-time check
-// */
-// #[derive(Derivative)]
-// #[derivative(
-//     Debug(bound = "&'a mut Arena<T, D, G>: Debug"),
-//     Clone(bound = "&'a mut Arena<T, D, G>: Clone"),
-//     PartialEq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
-//     Eq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
-//     Hash(bound = "&'a mut Arena<T, D, G>: Hash")
-// )]
-// pub struct ArenaCell<'a, T, , D = (),G: Gen = DefaultGen> {
-//     log: smallvec::SmallVec<[Borrow; 2]>,
-//     arena: &'a mut Arena<T, D, G>,
-// }
-//
-// #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-// enum Borrow {
-//     Mutable(Slot),
-//     Immutable(Slot),
-// }
+/**
+Mutable access to multiple items in [`Arena`] at the cost of run-time check. Also the cell does NOT
+track drops, so you can't borrow it anymore if you mutably borrow an item.
+*/
+#[derive(Derivative)]
+#[derivative(
+    Debug(bound = "&'a mut Arena<T, D, G>: Debug"),
+    Clone(bound = "&'a mut Arena<T, D, G>: Clone"),
+    PartialEq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
+    Eq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
+    Hash(bound = "&'a mut Arena<T, D, G>: Hash")
+)]
+pub struct ArenaCell<'a, T, D = (), G: Gen = DefaultGen> {
+    arena: &'a mut Arena<T, D, G>,
+    log: SmallVec<[(Slot, Borrow); 2]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Borrow {
+    Mutable,
+    Immutable,
+}
+
+impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
+    fn new(arena: &'a mut Arena<T, D, G>) -> Self {
+        Self {
+            arena,
+            log: Default::default(),
+        }
+    }
+
+    fn state(&self, slot: Slot) -> Option<Borrow> {
+        self.log.iter().find(|(s, _b)| *s == slot).map(|(_s, b)| *b)
+    }
+
+    pub fn contains(&self, index: Index<T, D, G>) -> bool {
+        assert!(self.state(index.slot) != Some(Borrow::Mutable));
+        self.arena.contains(index)
+    }
+
+    pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
+        self.get_by_slot(index.slot)
+    }
+
+    pub fn get_mut(&self, index: Index<T, D, G>) -> Option<&mut T> {
+        self.get_mut_by_slot(index.slot)
+    }
+
+    pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
+        assert!(self.state(slot) != Some(Borrow::Mutable));
+        self.arena.get_by_slot(slot)
+    }
+
+    pub fn get_mut_by_slot(&self, slot: Slot) -> Option<&mut T> {
+        assert!(self.state(slot).is_none());
+        let arena = unsafe { &mut *(self.arena as *const _ as *mut Arena<T, D, G>) };
+        arena.get_mut_by_slot(slot)
+    }
+}
 
 /* `dervative`:
 We went to implement std traits only when all the fields implement that trait.
@@ -402,6 +440,10 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         self.entries
             .get_mut(slot.raw as usize)
             .and_then(|e| e.data.as_mut())
+    }
+
+    pub fn cell(&mut self) -> ArenaCell<T, D, G> {
+        ArenaCell::new(self)
     }
 }
 
