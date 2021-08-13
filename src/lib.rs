@@ -132,6 +132,10 @@ impl<T, D, G: Gen> Index<T, D, G> {
     pub fn slot(&self) -> Slot {
         self.slot
     }
+
+    pub fn gen(&self) -> G {
+        self.gen
+    }
 }
 
 type RawSlot = u32;
@@ -472,6 +476,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
     }
 
+    /// Removes all items that don't satisfy the predicate
     pub fn retain<F: FnMut(Index<T, D, G>, &mut T) -> bool>(&mut self, mut pred: F) {
         let mut i = 0;
         while i < self.entries.len() {

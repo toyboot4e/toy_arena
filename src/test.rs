@@ -17,7 +17,7 @@ fn test_size() {
 }
 
 #[test]
-fn test_capacity() {
+fn insert_remove_invalidate_replace() {
     #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
     pub struct Entity {
         pub hp: usize,
@@ -60,6 +60,13 @@ fn test_capacity() {
     assert_eq!(index4.slot(), unsafe { Slot::from_raw(4) });
     assert_eq!(entities.len(), 5);
     assert_eq!(entities.capacity(), 8);
+
+    let index4_2: Index<Entity> = entities.replace(index4, Entity { hp: 400 });
+    assert_eq!(index4_2.slot(), unsafe { Slot::from_raw(4) });
+    assert_eq!(index4_2.gen(), NonZeroU32::new(3).unwrap());
+    assert_eq!(entities.get(index4), None);
+    assert_eq!(entities.remove(index4), None);
+    assert_eq!(entities.invalidate(index4), Some(index4_2));
 }
 
 use std::collections::HashSet;
