@@ -171,3 +171,80 @@ impl<'a, T, D, G: Gen> Iterator for IndexedItemsMut<'a, T, D, G> {
 
 impl<'a, T, D, G: Gen> FusedIterator for IndexedItemsMut<'a, T, D, G> {}
 impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItemsMut<'a, T, D, G> {}
+
+pub struct EntryBindsMut<'a, T, D, G: Gen> {
+    // arena: &'a mut Arena<T, D, G>,
+    pub(crate) arena: &'a mut Arena<T, D, G>,
+    pub(crate) slot: Slot,
+    pub(crate) n_items: usize,
+    pub(crate) n_visited: usize,
+}
+
+impl<'a, T, D, G: Gen> Iterator for EntryBindsMut<'a, T, D, G> {
+    type Item = EntryBindBut<'a, T, D, G>;
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.n_visited < self.n_items {
+            let slot = self.slot;
+            self.slot.inc();
+
+            let entry = &mut self.arena.entries[slot.raw as usize];
+            if let Some(data) = &mut entry.data {
+                self.n_visited += 1;
+                let index = Index::new(slot, entry.gen.clone());
+                return Some(EntryBindBut {
+                    // UNSAFE: cannot infer lifetime
+                    arena: unsafe { &mut *(self.arena as *mut _) },
+                    index,
+                });
+            }
+        }
+
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let rest = self.n_items - self.n_visited;
+        (rest, Some(rest))
+    }
+}
+
+/// Mutable access to an arena entry
+pub struct EntryBindBut<'a, T, D, G: Gen> {
+    arena: &'a mut Arena<T, D, G>,
+    /// We could use slot indstead of index, but then it misses generation test
+    index: Index<T, D, G>,
+}
+
+impl<'a, T, D, G: Gen> EntryBindBut<'a, T, D, G>
+where
+    Index<T, D, G>: Copy,
+{
+    pub fn get(&self) -> &T {
+        self.arena.get(self.index).unwrap()
+    }
+
+    pub fn get_mut(&mut self) -> &T {
+        self.arena.get_mut(self.index).unwrap()
+    }
+
+    pub fn index(&self) -> Index<T, D, G> {
+        self.index
+    }
+
+    pub fn invalidate(self) {
+        assert!(self.arena.invalidate(self.index).is_none());
+    }
+
+    pub fn remove(self) -> T {
+        self.arena.remove(self.index).unwrap()
+    }
+
+    pub fn replace(mut self, new: T) -> Self {
+        let index = self.arena.replace(self.index, new);
+        assert_eq!(self.index.slot, index.slot);
+        Self {
+            arena: self.arena,
+            index,
+        }
+    }
+}
