@@ -4,6 +4,7 @@
 
 use crate::*;
 
+/// [`Arena::drain`] → `T`. Removes all items on drop
 pub struct Drain<'a, T, D, G: Gen> {
     pub(crate) arena: &'a mut Arena<T, D, G>,
     pub(crate) slot: Slot,
@@ -40,7 +41,7 @@ impl<'a, T, D, G: Gen> Drop for Drain<'a, T, D, G> {
     }
 }
 
-/// &T
+/// [`Arena::items`] → `&T`
 pub struct Items<'a, T, D, G: Gen> {
     pub(crate) arena: &'a Arena<T, D, G>,
     pub(crate) slot: Slot,
@@ -73,7 +74,7 @@ impl<'a, T, D, G: Gen> Iterator for Items<'a, T, D, G> {
 impl<'a, T, D, G: Gen> FusedIterator for Items<'a, T, D, G> {}
 impl<'a, T, D, G: Gen> ExactSizeIterator for Items<'a, T, D, G> {}
 
-/// &mut T
+/// [`Arena::items_mut`] → `&mut T`
 pub struct ItemsMut<'a, T, D, G: Gen> {
     pub(crate) arena: &'a mut Arena<T, D, G>,
     pub(crate) slot: Slot,
@@ -110,7 +111,7 @@ impl<'a, T, D, G: Gen> Iterator for ItemsMut<'a, T, D, G> {
 impl<'a, T, D, G: Gen> FusedIterator for ItemsMut<'a, T, D, G> {}
 impl<'a, T, D, G: Gen> ExactSizeIterator for ItemsMut<'a, T, D, G> {}
 
-/// (Index, &T)
+/// [`Arena::iter`] → `(Index, &T)`
 pub struct IndexedItems<'a, T, D, G: Gen> {
     pub(crate) arena: &'a Arena<T, D, G>,
     pub(crate) slot: Slot,
@@ -144,6 +145,7 @@ impl<'a, T, D, G: Gen> Iterator for IndexedItems<'a, T, D, G> {
 impl<'a, T, D, G: Gen> FusedIterator for IndexedItems<'a, T, D, G> {}
 impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItems<'a, T, D, G> {}
 
+/// [`Arena::iter_mut`] → `(Index, &mut T)`
 pub struct IndexedItemsMut<'a, T, D, G: Gen> {
     pub(crate) arena: &'a mut Arena<T, D, G>,
     pub(crate) slot: Slot,

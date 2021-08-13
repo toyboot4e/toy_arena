@@ -7,8 +7,8 @@ NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 
 # Features
 * Distinct arena types (second type parameter of [`Arena<T, D, G>`])
-* Customizable generation (third type parameter of [`Arena<T, D, G>`])
-* Borrow by item ([`Arena::cell`])
+* Customizable generation type (third type parameter of [`Arena<T, D, G>`])
+* Borrow check by item, not by container ([`Arena::cell`])
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -408,13 +408,14 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             .and_then(|e| e.data.as_mut())
     }
 
+    /// See [`ArenaCell`] doc
     pub fn cell(&mut self) -> ArenaCell<T, D, G> {
         ArenaCell::new(self)
     }
 }
 
 impl<T, D, G: Gen> Arena<T, D, G> {
-    /// (Index, &T)
+    /// `(Index, &T)`
     pub fn iter(&self) -> IndexedItems<T, D, G> {
         IndexedItems {
             arena: self,
@@ -423,7 +424,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
     }
 
-    /// (Index, &mut T)
+    /// `(Index, &mut T)`
     pub fn iter_mut(&mut self) -> IndexedItemsMut<T, D, G> {
         IndexedItemsMut {
             arena: self,
@@ -432,7 +433,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
     }
 
-    /// &T
+    /// `&T`
     pub fn items(&self) -> Items<T, D, G> {
         Items {
             arena: self,
@@ -441,7 +442,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
     }
 
-    /// &mut T
+    /// `&mut T`
     pub fn items_mut(&mut self) -> ItemsMut<T, D, G> {
         ItemsMut {
             arena: self,
@@ -450,6 +451,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
     }
 
+    /// `T`. Removes all items on drop
     pub fn drain(&mut self) -> Drain<T, D, G> {
         Drain {
             arena: self,
