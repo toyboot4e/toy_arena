@@ -172,6 +172,7 @@ impl<'a, T, D, G: Gen> Iterator for IndexedItemsMut<'a, T, D, G> {
 impl<'a, T, D, G: Gen> FusedIterator for IndexedItemsMut<'a, T, D, G> {}
 impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItemsMut<'a, T, D, G> {}
 
+/// Mutable access of arena entries (internally unsafe). See [`Arena::entries_mut`]
 pub struct EntryBindsMut<'a, T, D, G: Gen> {
     // arena: &'a mut Arena<T, D, G>,
     pub(crate) arena: &'a mut Arena<T, D, G>,
@@ -208,7 +209,7 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindsMut<'a, T, D, G> {
     }
 }
 
-/// Mutable access to an arena entry
+/// Mutable access to an arena entry (internally unsafe). See [`Arena::entries_mut`]
 pub struct EntryBindBut<'a, T, D, G: Gen> {
     arena: &'a mut Arena<T, D, G>,
     /// We could use slot indstead of index, but then it misses generation test
