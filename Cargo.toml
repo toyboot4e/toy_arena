@@ -1,7 +1,7 @@
 [package]
 name = "toy_arena"
 authors = ["toyboot4e"]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2018"
 description = "Extensible generational arena for various uses"
 license = "MIT"
