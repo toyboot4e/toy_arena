@@ -1,6 +1,6 @@
 [package]
 name = "toy_arena"
-author = "toyboot4e"
+authors = ["toyboot4e"]
 version = "0.1.0"
 edition = "2018"
 description = "Extensible generational arena for various uses"

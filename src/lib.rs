@@ -39,7 +39,8 @@ Generational arena
 
 It's basically a [`Vec`], but with fixed item positions; arena operations don't move items. And
 more, each item in the arena is given "generation" value, where we can distinguish new values from
-original values (and see if the original value is still there or alreadly replaced).*/
+original values (and see if the original value is still there or alreadly replaced).
+*/
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -51,7 +52,7 @@ original values (and see if the original value is still there or alreadly replac
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
     /// Number of occupied entries
-    len: Slot,
+    n_items: Slot,
     /// If `free` is empty, `entries[0..entries.len()]` is occupied
     free: Vec<Slot>,
     /// Distinct type parameter
@@ -171,7 +172,7 @@ impl Slot {
     }
 }
 
-/// Generation type, one of the unsized `NonZero` types
+/// Generation type, one of the unsized `NonZero` types in [`std::num`]
 pub trait Gen: Debug + Clone + PartialEq + Eq + Hash + 'static {
     fn default_gen() -> Self;
     fn next(&mut self) -> Self;
@@ -205,7 +206,7 @@ impl_generators!(NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64);
 impl<T, D, G: Gen> Arena<T, D, G> {
     /// Number of items in this arena
     pub fn len(&self) -> usize {
-        self.len.raw as usize
+        self.n_items.raw as usize
     }
 
     pub fn is_empty(&self) -> bool {
@@ -246,7 +247,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         Self {
             entries: data,
             free,
-            len: Slot::default(),
+            n_items: Slot::default(),
             _distinct: PhantomData,
         }
     }
@@ -267,7 +268,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             let entry = &mut self.entries[slot.raw as usize];
             assert!(entry.data.is_none(), "free slot occupied?");
             entry.data = Some(data);
-            self.len.inc();
+            self.n_items.inc();
             entry.gen.next()
         };
 
@@ -277,7 +278,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// Removes all the items
     pub fn clear(&mut self) {
         self.free.clear();
-        self.len = Slot { raw: 0 };
+        self.n_items = Slot { raw: 0 };
     }
 
     /// Returns some item if the generation matchesA. Returns none on mismatch or no data
@@ -289,7 +290,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         } else {
             let taken = entry.data.take();
             assert!(taken.is_some());
-            self.len.dec();
+            self.n_items.dec();
             self.free.push(index.slot);
             taken
         }
@@ -303,7 +304,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             Some(Index::new(index.slot, entry.gen.clone()))
         } else {
             entry.data = None;
-            self.len.dec();
+            self.n_items.dec();
             self.free.push(index.slot);
             None
         }
@@ -317,7 +318,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         } else {
             let taken = entry.data.take();
             assert!(taken.is_some());
-            self.len.dec();
+            self.n_items.dec();
             self.free.push(slot);
             taken
         }
@@ -330,7 +331,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             Some(Index::new(slot, entry.gen.clone()))
         } else {
             entry.data = None;
-            self.len.dec();
+            self.n_items.dec();
             self.free.push(slot);
             None
         }
@@ -418,35 +419,37 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// `(Index, &T)`
     pub fn iter(&self) -> IndexedItems<T, D, G> {
         IndexedItems {
-            arena: self,
-            slot: Slot::default(),
+            entries: self.entries.iter().enumerate(),
+            n_items: self.n_items.raw as usize,
             n_visited: 0,
+            _distinct: PhantomData,
         }
     }
 
     /// `(Index, &mut T)`
     pub fn iter_mut(&mut self) -> IndexedItemsMut<T, D, G> {
         IndexedItemsMut {
-            arena: self,
-            slot: Slot::default(),
+            entries: self.entries.iter_mut().enumerate(),
+            n_items: self.n_items.raw as usize,
             n_visited: 0,
+            _distinct: PhantomData,
         }
     }
 
     /// `&T`
-    pub fn items(&self) -> Items<T, D, G> {
+    pub fn items(&self) -> Items<T, G> {
         Items {
-            arena: self,
-            slot: Slot::default(),
+            entries: self.entries.iter(),
+            n_items: self.n_items.raw as usize,
             n_visited: 0,
         }
     }
 
     /// `&mut T`
-    pub fn items_mut(&mut self) -> ItemsMut<T, D, G> {
+    pub fn items_mut(&mut self) -> ItemsMut<T, G> {
         ItemsMut {
-            arena: self,
-            slot: Slot::default(),
+            entries: self.entries.iter_mut(),
+            n_items: self.n_items.raw as usize,
             n_visited: 0,
         }
     }
