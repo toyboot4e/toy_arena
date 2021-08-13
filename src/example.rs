@@ -1,9 +1,9 @@
 /*!
-Example documentation
+Example code for documentation
 
 # Distinct type parameter `D`
 
-Second type parameter of [`Arena<T, D, G>`] is used for creating distinct arena types.
+Second type parameter of [`Arena<T, D, G>`] can be used for creating distinct arena types (`D=()` if not specified):
 
 ```
 use toy_arena::{Arena, Index};
@@ -27,11 +27,11 @@ pub struct View {
 ```
 
 We don't need distinct type parameter in this example.. 😂 But if we have two arenas for the same
-type of items, we could distinguish `Index` by the belonging container type.
+type of items, we could distinguish [`Index`] by the belonging container type.
 
 # Arena cell
 
-When we want to mutably borrow multiple items in the arena, we can use [`ArenaCell`].
+When we want to mutably borrow multiple items in the arena, we can use [`ArenaCell`]:
 
 ```
 use toy_arena::{Arena, Index};

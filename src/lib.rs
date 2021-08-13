@@ -8,7 +8,7 @@ NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 # Features
 * Distinct arena types (second type parameter of [`Arena<T, D, G>`])
 * Customizable generation type (third type parameter of [`Arena<T, D, G>`])
-* Borrow check by item, not by container ([`Arena::cell`])
+* Borrow check per item, not per container ([`Arena::cell`])
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -146,7 +146,7 @@ pub struct Slot {
 impl Slot {
     /// Creates slot from raw value
     /// # Safety
-    /// if the raw slot > arena.len(), use of the slot will cause panic.
+    /// if the raw slot > arena.capacity(), use of the slot will cause panic.
     pub unsafe fn from_raw(raw: RawSlot) -> Self {
         Self { raw }
     }
