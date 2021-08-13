@@ -182,17 +182,17 @@ pub struct EntryBindsMut<'a, T, D, G: Gen> {
 }
 
 impl<'a, T, D, G: Gen> Iterator for EntryBindsMut<'a, T, D, G> {
-    type Item = EntryBindBut<'a, T, D, G>;
+    type Item = EntryBindMut<'a, T, D, G>;
     fn next(&mut self) -> Option<Self::Item> {
         while self.n_visited < self.n_items {
             let slot = self.slot;
             self.slot.inc();
 
             let entry = &mut self.arena.entries[slot.raw as usize];
-            if let Some(data) = &mut entry.data {
+            if let Some(_data) = &mut entry.data {
                 self.n_visited += 1;
                 let index = Index::new(slot, entry.gen.clone());
-                return Some(EntryBindBut {
+                return Some(EntryBindMut {
                     // UNSAFE: cannot infer lifetime
                     arena: unsafe { &mut *(self.arena as *mut _) },
                     index,
@@ -210,13 +210,13 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindsMut<'a, T, D, G> {
 }
 
 /// [`Arena::entries_mut`] → mutable access to an arena entry (internally unsafe)
-pub struct EntryBindBut<'a, T, D, G: Gen> {
+pub struct EntryBindMut<'a, T, D, G: Gen> {
     arena: &'a mut Arena<T, D, G>,
     /// We could use slot indstead of index, but then it misses generation test
     index: Index<T, D, G>,
 }
 
-impl<'a, T, D, G: Gen> EntryBindBut<'a, T, D, G>
+impl<'a, T, D, G: Gen> EntryBindMut<'a, T, D, G>
 where
     Index<T, D, G>: Copy,
 {
@@ -240,7 +240,7 @@ where
         self.arena.remove(self.index).unwrap()
     }
 
-    pub fn replace(mut self, new: T) -> Self {
+    pub fn replace(self, new: T) -> Self {
         let index = self.arena.replace(self.index, new);
         assert_eq!(self.index.slot, index.slot);
         Self {

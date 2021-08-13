@@ -493,9 +493,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
     }
 
-    /// Returns an iterator of slots. You can modify the arena during the iteration, don't
-    /// remove/invalidate or insert new items (or the iteration may be complicated).
-    pub fn entries_mut(mut self: &mut Self) -> EntryBindsMut<T, D, G> {
+    /// See [`EntryBindsMut`] and [`EntryBindMut`]
+    pub fn entries_mut(self: &mut Self) -> EntryBindsMut<T, D, G> {
         let n_items = self.n_items.raw as usize;
         EntryBindsMut {
             arena: self,
