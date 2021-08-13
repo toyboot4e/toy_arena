@@ -1,5 +1,5 @@
 /*!
-`toy_arena` terator types
+`toy_arena` iterator types
 */
 
 use crate::*;

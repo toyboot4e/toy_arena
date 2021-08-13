@@ -1,13 +1,14 @@
 /*!
-Extensible generational arena for various uses
+Extensible generational arena for various uses. [`Example`](example)
 
-Goals: Tiny code and real use. Non-goals: Extream performance and super safety.
+Goals: Tiny code and real use. Non-goals: Super fast performance.
 
-NOTE: While arena requires strict safety, `toy_arena` is not so tested (yet).
+NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 
 # Features
 * Distinct arena types (second type parameter of [`Arena<T, D, G>`])
 * Customizable generation (third type parameter of [`Arena<T, D, G>`])
+* Borrow by item ([`Arena::cell`])
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -17,19 +18,20 @@ NOTE: While arena requires strict safety, `toy_arena` is not so tested (yet).
 // use closures to implement `IntoIter`
 #![feature(type_alias_impl_trait)]
 
+pub mod example;
 pub mod iter;
 
 #[cfg(test)]
 mod test;
 
-use std::{fmt::Debug, hash::Hash, iter::*, marker::PhantomData, num::*, ops};
+use std::{cell::RefCell, fmt::Debug, hash::Hash, iter::*, marker::PhantomData, num::*, ops};
 
 use derivative::Derivative;
 use smallvec::SmallVec;
 
 use crate::iter::*;
 
-/// Default generation type
+/// Default generation type used by arena
 pub type DefaultGen = NonZeroU32;
 
 /**
@@ -87,12 +89,11 @@ Virtually, `ArenaCell` casts `Arena<T>` to `Arena<RefCell<T>>`, with more restri
     Debug(bound = "&'a mut Arena<T, D, G>: Debug"),
     Clone(bound = "&'a mut Arena<T, D, G>: Clone"),
     PartialEq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
-    Eq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
-    Hash(bound = "&'a mut Arena<T, D, G>: Hash")
+    Eq(bound = "&'a mut Arena<T, D, G>: PartialEq")
 )]
 pub struct ArenaCell<'a, T, D = (), G: Gen = DefaultGen> {
     arena: &'a mut Arena<T, D, G>,
-    log: SmallVec<[(Slot, Borrow); 2]>,
+    log: RefCell<SmallVec<[(Slot, Borrow); 2]>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -109,7 +110,7 @@ slot is already replaced by another value, the generation of the entry is alread
 can identify the original item from replaced item.
 */
 #[derive(Derivative)]
-#[derivative(Debug, Clone, PartialEq, Eq, Hash)]
+#[derivative(Copy, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Index<T, D = (), G: Gen = DefaultGen> {
     slot: Slot,
     gen: G,
@@ -511,7 +512,11 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
     }
 
     fn state(&self, slot: Slot) -> Option<Borrow> {
-        self.log.iter().find(|(s, _b)| *s == slot).map(|(_s, b)| *b)
+        self.log
+            .borrow()
+            .iter()
+            .find(|(s, _b)| *s == slot)
+            .map(|(_s, b)| *b)
     }
 
     pub fn contains(&self, index: Index<T, D, G>) -> bool {
@@ -528,12 +533,28 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
     }
 
     pub fn get_by_slot(&self, slot: Slot) -> Option<&T> {
-        assert!(self.state(slot) != Some(Borrow::Mutable));
+        match self.state(slot) {
+            None => self.log.borrow_mut().push((slot, Borrow::Immutable)),
+            Some(Borrow::Immutable) => {}
+            Some(Borrow::Mutable) => {
+                panic!("Already borrowed (mutably)");
+            }
+        }
+
         self.arena.get_by_slot(slot)
     }
 
     pub fn get_mut_by_slot(&self, slot: Slot) -> Option<&mut T> {
-        assert!(self.state(slot).is_none());
+        match self.state(slot) {
+            None => self.log.borrow_mut().push((slot, Borrow::Mutable)),
+            Some(Borrow::Immutable) => {
+                panic!("Already borrowed (immutably)");
+            }
+            Some(Borrow::Mutable) => {
+                panic!("Already borrowed (mutably)");
+            }
+        }
+
         let arena = unsafe { &mut *(self.arena as *const _ as *mut Arena<T, D, G>) };
         arena.get_mut_by_slot(slot)
     }
