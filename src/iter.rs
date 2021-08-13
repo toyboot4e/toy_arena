@@ -102,7 +102,7 @@ impl<'a, T, G: Gen> Iterator for ItemsMut<'a, T, G> {
 impl<'a, T, G: Gen> FusedIterator for ItemsMut<'a, T, G> {}
 impl<'a, T, G: Gen> ExactSizeIterator for ItemsMut<'a, T, G> {}
 
-// /// [`Arena::iter`] → `(Index, &T)`
+/// [`Arena::iter`] → `(Index, &T)`
 pub struct IndexedItems<'a, T, D, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::Iter<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
@@ -172,7 +172,7 @@ impl<'a, T, D, G: Gen> Iterator for IndexedItemsMut<'a, T, D, G> {
 impl<'a, T, D, G: Gen> FusedIterator for IndexedItemsMut<'a, T, D, G> {}
 impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItemsMut<'a, T, D, G> {}
 
-/// Mutable access of arena entries (internally unsafe). See [`Arena::entries_mut`]
+/// [`Arena::entries_mut`] → mutable access of arena entries (internally unsafe)
 pub struct EntryBindsMut<'a, T, D, G: Gen> {
     // arena: &'a mut Arena<T, D, G>,
     pub(crate) arena: &'a mut Arena<T, D, G>,
@@ -209,7 +209,7 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindsMut<'a, T, D, G> {
     }
 }
 
-/// Mutable access to an arena entry (internally unsafe). See [`Arena::entries_mut`]
+/// [`Arena::entries_mut`] → mutable access to an arena entry (internally unsafe)
 pub struct EntryBindBut<'a, T, D, G: Gen> {
     arena: &'a mut Arena<T, D, G>,
     /// We could use slot indstead of index, but then it misses generation test
