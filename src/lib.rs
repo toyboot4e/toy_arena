@@ -60,6 +60,7 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
     _distinct: PhantomData<fn() -> D>,
+    // _distinct: PhantomData<*const D>,
 }
 
 /* Note on `dervative` use:
@@ -337,7 +338,13 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             self.entries.push(Self::default_entry());
             slot
         } else {
-            self.extend(self.entries.capacity() * 2);
+            let mut cap = self.entries.capacity();
+            if self.entries.capacity() == 0 {
+                cap = 4;
+            } else {
+                cap *= 2;
+            }
+            self.extend(cap);
             self.next_free_slot()
         }
     }
@@ -403,8 +410,46 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             })
     }
 
-    /// Returns an [`Index`] if any data is there
-    pub fn index_at(&self, slot: Slot) -> Option<Index<T, D, G>> {
+    pub fn get2_mut(
+        &mut self,
+        ix1: Index<T, D, G>,
+        ix2: Index<T, D, G>,
+    ) -> Option<(&mut T, &mut T)> {
+        assert_ne!(ix1.slot(), ix2.slot());
+        let x1 = self.get(ix1)?;
+        let x2 = self.get(ix2)?;
+        Some(unsafe {
+            (
+                &mut *(x1 as *const _ as *mut _),
+                &mut *(x2 as *const _ as *mut _),
+            )
+        })
+    }
+
+    pub fn get3_mut(
+        &mut self,
+        ix1: Index<T, D, G>,
+        ix2: Index<T, D, G>,
+        ix3: Index<T, D, G>,
+    ) -> Option<(&mut T, &mut T, &mut T)> {
+        assert!(ix1.slot() != ix2.slot() && ix2.slot() != ix3.slot() && ix3.slot() != ix1.slot());
+        let x1 = self.get(ix1)?;
+        let x2 = self.get(ix2)?;
+        let x3 = self.get(ix3)?;
+        Some(unsafe {
+            (
+                &mut *(x1 as *const _ as *mut _),
+                &mut *(x2 as *const _ as *mut _),
+                &mut *(x3 as *const _ as *mut _),
+            )
+        })
+    }
+
+    /// Upgrades slot to `Index`. Prefer [`Arena::entries_mut`]
+    /// # Safety
+    /// Accessors use given slot without checking the range, so if slot.raw > arena.capacinty(), it
+    /// will cause panic.
+    pub unsafe fn upgrade(&self, slot: Slot) -> Option<Index<T, D, G>> {
         self.entries.get(slot.raw as usize).and_then(|e| {
             if e.data.is_some() {
                 Some(Index::new(slot, e.gen))
@@ -417,6 +462,29 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// See [`ArenaCell`] doc
     pub fn cell(&mut self) -> ArenaCell<T, D, G> {
         ArenaCell::new(self)
+    }
+
+    /// Internal use only
+    pub(crate) fn get_by_slot(&self, slot: Slot) -> Option<&T> {
+        self.entries.get(slot.raw as usize)?.data.as_ref()
+    }
+
+    /// Internal use only
+    pub(crate) fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
+        self.entries.get_mut(slot.raw as usize)?.data.as_mut()
+    }
+
+    /// Internal use only
+    pub(crate) fn get2_mut_by_slot(&mut self, s1: Slot, s2: Slot) -> Option<(&mut T, &mut T)> {
+        assert_ne!(s1, s2);
+        let x1 = self.get_by_slot(s1)?;
+        let x2 = self.get_by_slot(s2)?;
+        Some(unsafe {
+            (
+                &mut *(x1 as *const _ as *mut _),
+                &mut *(x2 as *const _ as *mut _),
+            )
+        })
     }
 }
 

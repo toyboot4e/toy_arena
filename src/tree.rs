@@ -7,7 +7,7 @@ pub mod iter;
 #[cfg(test)]
 mod test;
 
-use std::{fmt::Debug, hash::Hash, ops};
+use std::{cmp::Ordering, fmt::Debug, hash::Hash, ops};
 
 use derivative::Derivative;
 
@@ -20,7 +20,8 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 
 // TODO: deep clone
 
-/// Directed rooted tree, layered on top of [`Arena`]
+/// Directed rooted tree, layered on top of [`Arena`]. Parenting methods are defined as [`NodeId`]
+/// methods.
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -30,7 +31,8 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 )]
 pub struct Tree<T, D = (), G: Gen = DefaultGen> {
     nodes: NodeArena<T, D, G>,
-    // TODO: use nonmax type?
+    /// Corresponds to implicit root
+    clink: ChildLink,
 }
 
 /// Node that is aware of siblings and chidren
@@ -43,12 +45,24 @@ pub struct Tree<T, D = (), G: Gen = DefaultGen> {
 )]
 pub struct Node<T> {
     token: T,
-    first_child: Option<Slot>,
-    last_child: Option<Slot>,
+    slink: SiblingLink,
+    clink: ChildLink,
+}
+
+/// Siblings are connected as linked list
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+struct SiblingLink {
     /// Next sibling
     next: Option<Slot>,
     /// Previous sibling
     prev: Option<Slot>,
+}
+
+/// Children are also linked list and the start and end is referred to
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+struct ChildLink {
+    first: Option<Slot>,
+    last: Option<Slot>,
 }
 
 impl<T, D, G: Gen> Default for Tree<T, D, G> {
@@ -65,6 +79,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             nodes: NodeArena::with_capacity(cap),
+            clink: Default::default(),
         }
     }
 
@@ -80,6 +95,12 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn insert(&mut self, token: T) -> NodeId<T, D, G> {
         let node = Node::new(token);
         let id = self.nodes.insert(node);
+
+        self.clink.last = Some(id.slot());
+        if self.clink.first.is_none() {
+            self.clink.first = Some(id.slot());
+        }
+
         id
     }
 
@@ -89,6 +110,15 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 
     pub fn get_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T>> {
         self.nodes.get_mut(id)
+    }
+
+    // Iterators
+
+    pub fn root(&self) -> iter::SiblingsNext<T, D, G> {
+        iter::SiblingsNext {
+            next: self.clink.first,
+            tree: self,
+        }
     }
 }
 
@@ -109,15 +139,9 @@ impl<T> Node<T> {
     fn new(token: T) -> Self {
         Self {
             token,
-            first_child: None,
-            last_child: None,
-            next: None,
-            prev: None,
+            clink: Default::default(),
+            slink: Default::default(),
         }
-    }
-
-    pub fn children<'a, D, G: Gen>(self, tree: &'a Tree<T, D, G>) -> iter::Children<'a, T, D, G> {
-        todo!()
     }
 
     /// Returns reference to the internal data
@@ -135,24 +159,46 @@ impl<T> Node<T> {
 impl<T, D, G: Gen> NodeId<T, D, G> {
     /// Append child
     pub fn append(self, tree: &mut Tree<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
-        if !tree.nodes.contains(self) {
+        if !tree.contains(self) {
             return None;
+        };
+
+        let child_node = Node::new(child);
+        let child_id = tree.nodes.insert(child_node);
+        let child_slot = child_id.slot();
+
+        // connect the last child and the new child
+        let self_node = tree.get_mut(self).unwrap();
+        if let Some(last_slot) = self_node.clink.last {
+            let (last_node, child_node) =
+                tree.nodes.get2_mut_by_slot(last_slot, child_slot).unwrap();
+            debug_assert!(last_node.slink.next.is_none());
+            last_node.slink.next = Some(child_slot);
+            child_node.slink.prev = Some(last_slot);
         }
 
-        let node = Node::new(child);
-        let id = tree.nodes.insert(node);
+        // append the new child
+        let self_node = tree.get_mut(self).unwrap();
+        self_node.clink.last = Some(child_slot);
 
-        if id.slot() > Slot::ZERO {
-            let slot = Slot {
-                raw: id.slot().raw - 1,
-            };
-            let prev = &mut tree.nodes.entries[slot.raw as usize].data.unwrap();
-            prev.next = Some(id);
+        if self_node.clink.first.is_none() {
+            self_node.clink.first = self_node.clink.last;
         }
 
-        let me = &mut tree.nodes[self];
-        me.children.push(id);
-
-        Some(id)
+        Some(child_id)
     }
+
+    // Remove this node and the children
+
+    // Remove child and their children
+}
+
+impl<T, D, G: Gen> NodeId<T, D, G> {
+    // /// Iterator of this node and their children
+    // pub fn traverse<'a>(
+    //     &self,
+    //     tree: &'a Tree<T, D, G>,
+    // ) -> impl Iterator<Item = iter::TraverseItem<'a, T>> {
+    //     iter::Traverse::new(tree, self.slot())
+    // }
 }

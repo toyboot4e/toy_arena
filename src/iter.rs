@@ -17,7 +17,7 @@ impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
             let slot = self.slot;
             self.slot.inc();
 
-            let index = match self.arena.index_at(slot) {
+            let index = match unsafe { self.arena.upgrade(slot) } {
                 Some(i) => i,
                 None => continue,
             };
