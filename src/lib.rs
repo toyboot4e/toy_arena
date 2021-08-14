@@ -6,9 +6,10 @@ Goals: Tiny code and real use. Non-goals: Super fast performance.
 NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 
 # Features
+* Borrow check per item, not per container ([`Arena::cell`])
+* Mutable iterator ([`Arena::entries_mut`])
 * Distinct arena types (second type parameter of [`Arena<T, D, G>`])
 * Customizable generation type (third type parameter of [`Arena<T, D, G>`])
-* Borrow check per item, not per container ([`Arena::cell`])
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
