@@ -58,7 +58,7 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     free: Vec<Slot>,
     /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
-    _distinct: PhantomData<D>,
+    _distinct: PhantomData<fn() -> D>,
 }
 
 /* Note on `dervative` use:
@@ -116,8 +116,8 @@ can identify the original item from replaced item.
 pub struct Index<T, D = (), G: Gen = DefaultGen> {
     slot: Slot,
     gen: G,
-    _ty: PhantomData<T>,
-    _distinct: PhantomData<D>,
+    _ty: PhantomData<fn() -> T>,
+    _distinct: PhantomData<fn() -> D>,
 }
 
 impl<T, D, G: Gen> Index<T, D, G> {

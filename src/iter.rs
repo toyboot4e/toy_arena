@@ -111,7 +111,7 @@ pub struct IndexedItems<'a, T, D, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::Iter<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
     pub(crate) n_visited: usize,
-    pub(crate) _distinct: PhantomData<D>,
+    pub(crate) _distinct: PhantomData<fn() -> D>,
 }
 
 impl<'a, T, D, G: Gen> Iterator for IndexedItems<'a, T, D, G> {
@@ -146,7 +146,7 @@ pub struct IndexedItemsMut<'a, T, D, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::IterMut<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
     pub(crate) n_visited: usize,
-    pub(crate) _distinct: PhantomData<D>,
+    pub(crate) _distinct: PhantomData<fn() -> D>,
 }
 
 impl<'a, T, D, G: Gen> Iterator for IndexedItemsMut<'a, T, D, G> {
