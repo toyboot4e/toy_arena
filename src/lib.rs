@@ -89,7 +89,6 @@ Virtually, `ArenaCell` casts `Arena<T>` to `Arena<RefCell<T>>`, with more restri
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "&'a mut Arena<T, D, G>: Debug"),
-    Clone(bound = "&'a mut Arena<T, D, G>: Clone"),
     PartialEq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
     Eq(bound = "&'a mut Arena<T, D, G>: PartialEq")
 )]
