@@ -3,7 +3,7 @@
 :thunderdome: https://docs.rs/thunderdome/latest/thunderdome/[thunderdome]
 :indextree: https://docs.rs/indextree/latest/indextree/[indextree]
 :arena-cell: https://docs.rs/toy_arena/latest/toy_arena/struct.ArenaCell.html[ArenaCell]
-:drt: https://docs.rs/toy_arena/latest/toy_arena/dst/index.html[DRT]
+:tree: https://docs.rs/toy_arena/latest/toy_arena/tree/index.html[tree]
 
 {toy-arena} is a generational arena for my game development.
 
@@ -22,5 +22,5 @@ Both are unsafe, but I _think_ it doesn't break Rust's safety rule (practically 
 +
 I changed all `PhantomData<T>` to `PhantomData<fn() -> T>`
 +
-I added {DRT} support, following the API of {indextree}.
+I added {tree} support, following {indextree}.
 

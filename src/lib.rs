@@ -19,9 +19,9 @@ NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 // use closures to implement `IntoIter`
 #![feature(type_alias_impl_trait)]
 
-pub mod drt;
 pub mod example;
 pub mod iter;
+pub mod tree;
 
 #[cfg(test)]
 mod test;

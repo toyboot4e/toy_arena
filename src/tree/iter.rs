@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use super::*;
 
 pub struct Children<'a, T, D, G: Gen> {
-    drt: &'a Drt<T, D, G>,
+    tree: &'a Drt<T, D, G>,
     current: Slot,
     _ty1: PhantomData<fn() -> T>,
     _ty2: PhantomData<fn() -> D>,

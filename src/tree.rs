@@ -1,7 +1,5 @@
 /*!
-Directed rooted tree, layered on top of [`Arena`]
-
-DRT is useful for, for example, implementing scene graph of a game.
+Rooted tree of sibling/children-aware nodes
 */
 
 pub mod iter;
@@ -15,7 +13,7 @@ use derivative::Derivative;
 
 use crate::{DefaultGen, Gen, Slot};
 
-/// [`Index`](crate::Index) of node in [`Drt`]
+/// [`Index`](crate::Index) of node in [`Tree`]
 pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T>, D, G>;
 
 type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
@@ -30,12 +28,12 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
     Eq(bound = "T: PartialEq"),
     Hash(bound = "T: Hash")
 )]
-pub struct Drt<T, D = (), G: Gen = DefaultGen> {
+pub struct Tree<T, D = (), G: Gen = DefaultGen> {
     nodes: NodeArena<T, D, G>,
     // TODO: use nonmax type?
 }
 
-/// Item with indices for linked list
+/// Node that is aware of siblings and chidren
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -47,19 +45,19 @@ pub struct Node<T> {
     token: T,
     first_child: Option<Slot>,
     last_child: Option<Slot>,
-    /// Next slibling
+    /// Next sibling
     next: Option<Slot>,
-    /// Previous slibling
+    /// Previous sibling
     prev: Option<Slot>,
 }
 
-impl<T, D, G: Gen> Default for Drt<T, D, G> {
+impl<T, D, G: Gen> Default for Tree<T, D, G> {
     fn default() -> Self {
         Self::with_capacity(0)
     }
 }
 
-impl<T, D, G: Gen> Drt<T, D, G> {
+impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -94,14 +92,14 @@ impl<T, D, G: Gen> Drt<T, D, G> {
     }
 }
 
-impl<T, D, G: Gen> ops::Index<NodeId<T, D, G>> for Drt<T, D, G> {
+impl<T, D, G: Gen> ops::Index<NodeId<T, D, G>> for Tree<T, D, G> {
     type Output = Node<T>;
     fn index(&self, id: NodeId<T, D, G>) -> &Self::Output {
         self.get(id).unwrap()
     }
 }
 
-impl<T, D, G: Gen> ops::IndexMut<NodeId<T, D, G>> for Drt<T, D, G> {
+impl<T, D, G: Gen> ops::IndexMut<NodeId<T, D, G>> for Tree<T, D, G> {
     fn index_mut(&mut self, id: NodeId<T, D, G>) -> &mut Self::Output {
         self.get_mut(id).unwrap()
     }
@@ -118,7 +116,7 @@ impl<T> Node<T> {
         }
     }
 
-    pub fn children<'a, D, G: Gen>(self, drt: &'a Drt<T, D, G>) -> iter::Children<'a, T, D, G> {
+    pub fn children<'a, D, G: Gen>(self, tree: &'a Tree<T, D, G>) -> iter::Children<'a, T, D, G> {
         todo!()
     }
 
@@ -136,23 +134,23 @@ impl<T> Node<T> {
 /// Implementation for DRT node index
 impl<T, D, G: Gen> NodeId<T, D, G> {
     /// Append child
-    pub fn append(self, drt: &mut Drt<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
-        if !drt.nodes.contains(self) {
+    pub fn append(self, tree: &mut Tree<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
+        if !tree.nodes.contains(self) {
             return None;
         }
 
         let node = Node::new(child);
-        let id = drt.nodes.insert(node);
+        let id = tree.nodes.insert(node);
 
         if id.slot() > Slot::ZERO {
             let slot = Slot {
                 raw: id.slot().raw - 1,
             };
-            let prev = &mut drt.nodes.entries[slot.raw as usize].data.unwrap();
+            let prev = &mut tree.nodes.entries[slot.raw as usize].data.unwrap();
             prev.next = Some(id);
         }
 
-        let me = &mut drt.nodes[self];
+        let me = &mut tree.nodes[self];
         me.children.push(id);
 
         Some(id)
