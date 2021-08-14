@@ -18,6 +18,7 @@ NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 // use closures to implement `IntoIter`
 #![feature(type_alias_impl_trait)]
 
+pub mod drt;
 pub mod example;
 pub mod iter;
 
@@ -140,7 +141,7 @@ impl<T, D, G: Gen> Index<T, D, G> {
 
 type RawSlot = u32;
 
-/// Index of the backing `Vec` in [`Arena`]
+/// Index of the backing `Vec` in [`Arena`]. Can be upgrade to [`Index`] with [`Arena::index_at`]
 #[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Slot {
