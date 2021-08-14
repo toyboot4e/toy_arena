@@ -9,15 +9,17 @@ pub mod iter;
 #[cfg(test)]
 mod test;
 
-use derivative::Derivative;
-use std::{fmt::Debug, hash::Hash, marker::PhantomData};
+use std::{fmt::Debug, hash::Hash, ops};
 
-use crate::{Arena, DefaultGen, Gen};
+use derivative::Derivative;
+
+use crate::{DefaultGen, Gen};
 
 /// [`Index`](crate::Index) of node in [`Drt`]
-pub type Index<T, D = (), G = DefaultGen> = crate::Index<Node<T>, D, G>;
+pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T, D, G>, D, G>;
 
-type Children<T> = Vec<T>;
+type NodeArena<T, D, G> = crate::Arena<Node<T, D, G>, D, G>;
+type Children<T, D, G> = Vec<NodeId<T, D, G>>;
 
 // TODO: deep clone
 
@@ -30,8 +32,8 @@ type Children<T> = Vec<T>;
     Hash(bound = "T: Hash")
 )]
 pub struct Drt<T, D = (), G: Gen = DefaultGen> {
-    arena: Arena<Node<T>, D, G>,
-    root: Node<T, D, G>,
+    nodes: NodeArena<T, D, G>,
+    root: Children<T, D, G>,
 }
 
 /// Item + children
@@ -44,32 +46,67 @@ pub struct Drt<T, D = (), G: Gen = DefaultGen> {
 )]
 pub struct Node<T, D = (), G: Gen = DefaultGen> {
     token: T,
-    children: Children<Index<T, D, G>>,
-    _distinct: PhantomData<D>,
+    children: Children<T, D, G>,
 }
 
-impl<T, D, G: Gen> Drt<T, D, G> {
-    pub fn root(&self) -> &Node<T, D, G> {
-        &self.root
+impl<T, D, G: Gen> Default for Drt<T, D, G> {
+    fn default() -> Self {
+        Self::with_capacity(4)
     }
 }
 
-// Delegated to the underlaying arena
 impl<T, D, G: Gen> Drt<T, D, G> {
-    pub fn contains(&self, index: Index<T, D, G>) -> bool {
-        self.arena.contains(index)
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            nodes: NodeArena::with_capacity(cap),
+            root: Default::default(),
+        }
+    }
+
+    /// Indices of children of the hidden root node
+    pub fn root(&self) -> &[NodeId<T, D, G>] {
+        &self.root
+    }
+
+    pub fn contains(&self, index: NodeId<T, D, G>) -> bool {
+        self.nodes.contains(index)
     }
 
     pub fn len(&self) -> usize {
-        self.arena.len()
+        self.nodes.len()
+    }
+
+    /// Appends a new data to the root node
+    pub fn insert(&mut self, token: T) -> NodeId<T, D, G> {
+        let node = Node::new(token);
+        let id = self.nodes.insert(node);
+        self.root.push(id);
+        id
+    }
+
+    pub fn get(&self, id: NodeId<T, D, G>) -> Option<&Node<T, D, G>> {
+        self.nodes.get(id)
+    }
+
+    pub fn get_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T, D, G>> {
+        self.nodes.get_mut(id)
     }
 }
 
-// Wrappers of arena operations
-impl<T, D, G: Gen> Drt<T, D, G> {
-    /// Appends a new adta to the root node
-    pub fn insert(&mut self, token: T) -> Index<T, D, G> {
-        self.root.append_impl(&mut self.arena, token)
+impl<T, D, G: Gen> ops::Index<NodeId<T, D, G>> for Drt<T, D, G> {
+    type Output = Node<T, D, G>;
+    fn index(&self, id: NodeId<T, D, G>) -> &Self::Output {
+        self.get(id).unwrap()
+    }
+}
+
+impl<T, D, G: Gen> ops::IndexMut<NodeId<T, D, G>> for Drt<T, D, G> {
+    fn index_mut(&mut self, id: NodeId<T, D, G>) -> &mut Self::Output {
+        self.get_mut(id).unwrap()
     }
 }
 
@@ -78,31 +115,36 @@ impl<T, D, G: Gen> Node<T, D, G> {
         Self {
             token,
             children: Children::default(),
-            _distinct: PhantomData,
         }
     }
 
-    pub fn child_indices(&self) -> &[Index<T, D, G>] {
+    pub fn child_indices(&self) -> &[NodeId<T, D, G>] {
         &self.children
     }
 
-    pub fn get(&self) -> &T {
+    pub fn data(&self) -> &T {
         &self.token
     }
 
-    pub fn get_mut(&mut self) -> &mut T {
+    pub fn data_mut(&mut self) -> &mut T {
         &mut self.token
     }
+}
 
+/// Implementation for DRT node index
+impl<T, D, G: Gen> NodeId<T, D, G> {
     /// Append child
-    pub fn append(&mut self, drt: &mut Drt<T, D, G>, child: T) -> Index<T, D, G> {
-        self.append_impl(&mut drt.arena, child)
-    }
+    pub fn append(self, drt: &mut Drt<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
+        if !drt.nodes.contains(self) {
+            return None;
+        }
 
-    fn append_impl(&mut self, arena: &mut Arena<Node<T>, D, G>, child: T) -> Index<T, D, G> {
         let node = Node::new(child);
-        let index = arena.insert(node);
-        self.children.push(index);
-        index
+        let id = drt.nodes.insert(node);
+
+        let me = &mut drt.nodes[self];
+        me.children.push(id);
+
+        Some(id)
     }
 }
