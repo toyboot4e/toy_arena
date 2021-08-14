@@ -69,11 +69,11 @@ API, so we added indirect bounds above
 
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = "Option<T>: Debug"),
-    Clone(bound = "Option<T>: Clone"),
-    PartialEq(bound = "Option<T>: PartialEq"),
-    Eq(bound = "Option<T>: PartialEq"),
-    Hash(bound = "Option<T>: Hash")
+    Debug(bound = "T: Debug"),
+    Clone(bound = "T: Clone"),
+    PartialEq(bound = "T: PartialEq"),
+    Eq(bound = "T: PartialEq"),
+    Hash(bound = "T: Hash")
 )]
 struct Entry<T, G: Gen = DefaultGen> {
     gen: G,
@@ -88,9 +88,9 @@ Virtually, `ArenaCell` casts `Arena<T>` to `Arena<RefCell<T>>`, with more restri
 */
 #[derive(Derivative)]
 #[derivative(
-    Debug(bound = "&'a mut Arena<T, D, G>: Debug"),
-    PartialEq(bound = "&'a mut Arena<T, D, G>: PartialEq"),
-    Eq(bound = "&'a mut Arena<T, D, G>: PartialEq")
+    Debug(bound = "T: Debug"),
+    PartialEq(bound = "T: PartialEq"),
+    Eq(bound = "T: Eq")
 )]
 pub struct ArenaCell<'a, T, D = (), G: Gen = DefaultGen> {
     arena: &'a mut Arena<T, D, G>,
