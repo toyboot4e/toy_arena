@@ -13,13 +13,12 @@ use std::{fmt::Debug, hash::Hash, ops};
 
 use derivative::Derivative;
 
-use crate::{DefaultGen, Gen};
+use crate::{DefaultGen, Gen, Slot};
 
 /// [`Index`](crate::Index) of node in [`Drt`]
-pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T, D, G>, D, G>;
+pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T>, D, G>;
 
-type NodeArena<T, D, G> = crate::Arena<Node<T, D, G>, D, G>;
-type Children<T, D, G> = Vec<NodeId<T, D, G>>;
+type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 
 // TODO: deep clone
 
@@ -33,10 +32,10 @@ type Children<T, D, G> = Vec<NodeId<T, D, G>>;
 )]
 pub struct Drt<T, D = (), G: Gen = DefaultGen> {
     nodes: NodeArena<T, D, G>,
-    root: Children<T, D, G>,
+    // TODO: use nonmax type?
 }
 
-/// Item + children
+/// Item with indices for linked list
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -44,14 +43,19 @@ pub struct Drt<T, D = (), G: Gen = DefaultGen> {
     Eq(bound = "T: Eq"),
     Hash(bound = "T: Hash")
 )]
-pub struct Node<T, D = (), G: Gen = DefaultGen> {
+pub struct Node<T> {
     token: T,
-    children: Children<T, D, G>,
+    first_child: Option<Slot>,
+    last_child: Option<Slot>,
+    /// Next slibling
+    next: Option<Slot>,
+    /// Previous slibling
+    prev: Option<Slot>,
 }
 
 impl<T, D, G: Gen> Default for Drt<T, D, G> {
     fn default() -> Self {
-        Self::with_capacity(4)
+        Self::with_capacity(0)
     }
 }
 
@@ -63,13 +67,7 @@ impl<T, D, G: Gen> Drt<T, D, G> {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             nodes: NodeArena::with_capacity(cap),
-            root: Default::default(),
         }
-    }
-
-    /// Indices of children of the hidden root node
-    pub fn root(&self) -> &[NodeId<T, D, G>] {
-        &self.root
     }
 
     pub fn contains(&self, index: NodeId<T, D, G>) -> bool {
@@ -84,21 +82,20 @@ impl<T, D, G: Gen> Drt<T, D, G> {
     pub fn insert(&mut self, token: T) -> NodeId<T, D, G> {
         let node = Node::new(token);
         let id = self.nodes.insert(node);
-        self.root.push(id);
         id
     }
 
-    pub fn get(&self, id: NodeId<T, D, G>) -> Option<&Node<T, D, G>> {
+    pub fn get(&self, id: NodeId<T, D, G>) -> Option<&Node<T>> {
         self.nodes.get(id)
     }
 
-    pub fn get_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T, D, G>> {
+    pub fn get_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T>> {
         self.nodes.get_mut(id)
     }
 }
 
 impl<T, D, G: Gen> ops::Index<NodeId<T, D, G>> for Drt<T, D, G> {
-    type Output = Node<T, D, G>;
+    type Output = Node<T>;
     fn index(&self, id: NodeId<T, D, G>) -> &Self::Output {
         self.get(id).unwrap()
     }
@@ -110,22 +107,27 @@ impl<T, D, G: Gen> ops::IndexMut<NodeId<T, D, G>> for Drt<T, D, G> {
     }
 }
 
-impl<T, D, G: Gen> Node<T, D, G> {
+impl<T> Node<T> {
     fn new(token: T) -> Self {
         Self {
             token,
-            children: Children::default(),
+            first_child: None,
+            last_child: None,
+            next: None,
+            prev: None,
         }
     }
 
-    pub fn child_indices(&self) -> &[NodeId<T, D, G>] {
-        &self.children
+    pub fn children<'a, D, G: Gen>(self, drt: &'a Drt<T, D, G>) -> iter::Children<'a, T, D, G> {
+        todo!()
     }
 
+    /// Returns reference to the internal data
     pub fn data(&self) -> &T {
         &self.token
     }
 
+    /// Returns mutable reference to the internal data
     pub fn data_mut(&mut self) -> &mut T {
         &mut self.token
     }
@@ -141,6 +143,14 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
 
         let node = Node::new(child);
         let id = drt.nodes.insert(node);
+
+        if id.slot() > Slot::ZERO {
+            let slot = Slot {
+                raw: id.slot().raw - 1,
+            };
+            let prev = &mut drt.nodes.entries[slot.raw as usize].data.unwrap();
+            prev.next = Some(id);
+        }
 
         let me = &mut drt.nodes[self];
         me.children.push(id);

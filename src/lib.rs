@@ -149,6 +149,8 @@ pub struct Slot {
 }
 
 impl Slot {
+    const ZERO: Self = Self { raw: 0 };
+
     /// Creates slot from raw value
     /// # Safety
     /// if the raw slot > arena.capacity(), use of the slot will cause panic.
