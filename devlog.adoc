@@ -1,37 +1,24 @@
 = `toy_arena` devlog
+:toy_arena: https://docs.rs/toy_arena/latest/toy_arena/[toy_arena]
 :thunderdome: https://docs.rs/thunderdome/latest/thunderdome/[thunderdome]
-:indextere: https://docs.rs/indextree/latest/indextree/[indextree]
+:indextree: https://docs.rs/indextree/latest/indextree/[indextree]
 :arena-cell: https://docs.rs/toy_arena/latest/toy_arena/struct.ArenaCell.html[ArenaCell]
+:drt: https://docs.rs/toy_arena/latest/toy_arena/dst/index.html[DRT]
 
-`toy-arena` is basically a remake of {thunderdome}.
+{toy-arena} is a generational arena for my game development.
 
-== Motivations
+== Devlog
 
-I forked thunderdome for the following motivations:
-
-* Add type parameter `T` to `Index`
-* Allow implicit type conversion when inserting item to `Arena`
-
-Then it turned out I want a lot more tweaks:
-
-* Add {arena-cell} type for mutable access to multiple items in `Arena`
-
-* Add support for DRT (directed rooted tree)
+* Aug 13, 2021
 +
-{indextree} is a bit overkill for implementing scene graph of my game.
-
-* Add distinct type parameter `D` to `Arena<T>`.
+I published {toy-arena} on crates.io. Now it has different policies from {thunderdome}:
 +
-When we have multiple arenas for the same type of item, we can distinguish the arena types with the container of it:
+** {arena-cell} type, where we get mutable access to multple items.
+** Slot-based operations are removed. Instead, `EntryBindMut` type has slot-changing methods such as `remove`.
 +
-[source,rust]
-----
-pub struct A {
-    xs: Arena<u32, Self>,
-}
+Both are unsafe, but I _think_ it doesn't break Rust's safety rule (practically there's no mutable alias, I think).
 
-pub struct B {
-    xs: Arena<u32, Self>,
-}
-----
+* Aug 14, 2021
++
+I changed all `PhantomData<T>` to `PhantomData<fn() -> T>`
 
