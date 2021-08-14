@@ -1,0 +1,37 @@
+= `toy_arena` devlog
+:thunderdome: https://docs.rs/thunderdome/latest/thunderdome/[thunderdome]
+:indextere: https://docs.rs/indextree/latest/indextree/[indextree]
+:arena-cell: https://docs.rs/toy_arena/latest/toy_arena/struct.ArenaCell.html[ArenaCell]
+
+`toy-arena` is basically a remake of {thunderdome}.
+
+== Motivations
+
+I forked thunderdome for the following motivations:
+
+* Add type parameter `T` to `Index`
+* Allow implicit type conversion when inserting item to `Arena`
+
+Then it turned out I want a lot more tweaks:
+
+* Add {arena-cell} type for mutable access to multiple items in `Arena`
+
+* Add support for DRT (directed rooted tree)
++
+{indextree} is a bit overkill for implementing scene graph of my game.
+
+* Add distinct type parameter `D` to `Arena<T>`.
++
+When we have multiple arenas for the same type of item, we can distinguish the arena types with the container of it:
++
+[source,rust]
+----
+pub struct A {
+    xs: Arena<u32, Self>,
+}
+
+pub struct B {
+    xs: Arena<u32, Self>,
+}
+----
+
