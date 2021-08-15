@@ -237,7 +237,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     pub fn with_capacity(cap: usize) -> Self {
-        assert!(cap < RawSlot::MAX as usize, "Too big arena");
+        debug_assert!(cap < RawSlot::MAX as usize, "Too big arena");
 
         // fullfill the data with empty entries
         let mut data = Vec::with_capacity(cap);
@@ -286,7 +286,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let slot = self.next_free_slot();
         let gen = {
             let entry = &mut self.entries[slot.raw as usize];
-            assert!(entry.data.is_none(), "free slot occupied?");
+            debug_assert!(entry.data.is_none(), "free slot occupied?");
             entry.data = Some(data);
             self.n_items.inc();
             entry.gen.next()
@@ -309,7 +309,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             None
         } else {
             let taken = entry.data.take();
-            assert!(taken.is_some());
+            debug_assert!(taken.is_some());
             self.n_items.dec();
             self.free.push(index.slot);
             taken
@@ -332,11 +332,11 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     pub fn replace(&mut self, index: Index<T, D, G>, new: T) -> Index<T, D, G> {
         // The generation must much to the existing entry:
-        assert!(self.invalidate(index).is_none());
+        debug_assert!(self.invalidate(index).is_none());
         // This operation must have pushed the slot onto the `free` stack,
         // and re-insert the item to the same slot:
         let new_index = self.insert(new);
-        assert_eq!(new_index.slot, index.slot);
+        debug_assert_eq!(new_index.slot, index.slot);
         new_index
     }
 
@@ -365,8 +365,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// NOTE: After extending, len < capacity
     fn extend(&mut self, new_cap: usize) {
-        assert!(self.entries.capacity() < new_cap);
-        assert!((new_cap as RawSlot) < RawSlot::MAX);
+        debug_assert!(self.entries.capacity() < new_cap);
+        debug_assert!((new_cap as RawSlot) < RawSlot::MAX);
 
         let prev_cap = self.entries.len();
         self.entries.resize_with(new_cap, Self::default_entry);
@@ -490,7 +490,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Internal use only
     pub(crate) fn get2_mut_by_slot(&mut self, s1: Slot, s2: Slot) -> Option<(&mut T, &mut T)> {
-        assert_ne!(s1, s2);
+        debug_assert_ne!(s1, s2);
         let x1 = self.get_by_slot(s1)?;
         let x2 = self.get_by_slot(s2)?;
         Some(unsafe {

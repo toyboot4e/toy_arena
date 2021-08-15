@@ -237,7 +237,8 @@ where
     }
 
     pub fn invalidate(self) {
-        assert!(self.arena.invalidate(self.index).is_none());
+        let newer_node = self.arena.invalidate(self.index);
+        debug_assert!(newer_node.is_none());
     }
 
     pub fn remove(self) -> T {
@@ -246,7 +247,7 @@ where
 
     pub fn replace(self, new: T) -> Self {
         let index = self.arena.replace(self.index, new);
-        assert_eq!(self.index.slot, index.slot);
+        debug_assert_eq!(self.index.slot, index.slot);
         Self {
             arena: self.arena,
             index,
