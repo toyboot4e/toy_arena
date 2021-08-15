@@ -665,7 +665,7 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
             }
         }
 
-        let arena = unsafe { &mut *(self.arena as *const _ as *mut Arena<T, D, G>) };
-        arena.get_mut(index)
+        let ptr = self.arena.get(index)?;
+        Some(unsafe { &mut * (ptr as * const _ as * mut _ ) })
     }
 }

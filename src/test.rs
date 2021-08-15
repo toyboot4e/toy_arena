@@ -2,7 +2,7 @@ use super::*;
 use std::mem;
 
 #[test]
-fn test_size() {
+fn size() {
     // `Index` is 8 bytes long by default
     assert_eq!(mem::size_of::<Index<()>>(), mem::size_of::<u32>() * 2);
 
@@ -14,6 +14,55 @@ fn test_size() {
 
     // unfortunatelly, entry is a bit too long with occupied tag
     assert_eq!(mem::size_of::<Entry<u32>>(), 12);
+
+    // TODO: maybe use nonmax slot?
+    assert_eq!(mem::size_of::<Option<Slot>>(), 8);
+}
+
+#[test]
+fn cell() {
+    let mut arena = Arena::<usize>::new();
+
+    let ix0 = arena.insert(0);
+    let ix1 = arena.insert(10);
+    let ix2 = arena.insert(100);
+    let ix3 = arena.insert(1000);
+
+    {
+        let cell = arena.cell();
+        let x0 = cell.get_mut(ix0).unwrap();
+        let x1 = cell.get_mut(ix1).unwrap();
+        let x2 = cell.get_mut(ix2).unwrap();
+        let x3 = cell.get_mut(ix3).unwrap();
+
+        *x0 = 50;
+        *x1 = 500;
+        *x2 = 5000;
+        *x3 = 50000;
+    }
+
+    assert_eq!(arena.get(ix0), Some(&50));
+    assert_eq!(arena.get(ix1), Some(&500));
+    assert_eq!(arena.get(ix2), Some(&5000));
+    assert_eq!(arena.get(ix3), Some(&50000));
+}
+
+#[test]
+#[should_panic]
+fn cell_panic() {
+    let mut arena = Arena::<usize>::new();
+
+    let ix0 = arena.insert(0);
+    let ix1 = arena.insert(10);
+    let ix2 = arena.insert(100);
+
+    let cell = arena.cell();
+    let _x0 = cell.get_mut(ix0).unwrap();
+    let x1 = cell.get_mut(ix1).unwrap();
+    let _x2 = cell.get_mut(ix2).unwrap();
+
+    // panic!
+    let x1_2 = cell.get_mut(ix1);
 }
 
 #[test]

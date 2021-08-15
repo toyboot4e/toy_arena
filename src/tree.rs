@@ -23,6 +23,7 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 // TODO: deep clone
 
 /// Non-rooted tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting
+/// methods.
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
