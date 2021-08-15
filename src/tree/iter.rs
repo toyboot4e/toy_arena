@@ -8,47 +8,6 @@ use derivative::Derivative;
 
 use super::*;
 
-// macro_rules! impl_iter {
-//     ($name:ident, $next:expr) => {
-//         impl<'a, T, D, G> Iterator for $name<'a, T, D, G> {
-//             type Item = &'a Node<T, D, G>;
-//
-//             fn next(&mut self) -> Option<Self::Item> {
-//                 let node = tree.nodes[self.slot.raw as usize].data.as_mut().unwrap();
-//                 $next(node, &self.tree)
-//             }
-//         }
-//
-//         impl<'a, T> core::iter::FusedIterator for $name<'a, T> {}
-//     };
-// }
-
-// --------------------------------------------------------------------------------
-// Manual iteators, mainly for hinding `Slot` from user
-
-/// Iterator that walks through siblings
-// TODO: directon type parameter
-#[derive(Derivative)]
-#[derivative(Debug(bound = "T: Debug"))]
-pub struct SiblingsNext<'a, T, D = (), G: Gen = DefaultGen> {
-    pub(crate) next: Option<Slot>,
-    #[derivative(Debug = "ignore")]
-    pub(crate) tree: &'a Tree<T, D, G>,
-}
-
-impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
-    type Item = NodeRef<'a, T, D, G>;
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.next?;
-        let next_node = self.tree.nodes.get_by_slot(next).unwrap();
-        self.next = next_node.slink.next;
-        Some(NodeRef {
-            slot: next,
-            tree: self.tree,
-        })
-    }
-}
-
 /// Reference to a node and their children
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
@@ -93,6 +52,34 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
             // we know
             tree: self.tree,
         }
+    }
+}
+
+// --------------------------------------------------------------------------------
+// Manual iteator
+// - Hide `Slot` from user
+// - Implement automatic iterator
+
+/// Iterator that walks through siblings
+// TODO: directon type parameter
+#[derive(Derivative)]
+#[derivative(Debug(bound = "T: Debug"))]
+pub struct SiblingsNext<'a, T, D = (), G: Gen = DefaultGen> {
+    pub(crate) next: Option<Slot>,
+    #[derivative(Debug = "ignore")]
+    pub(crate) tree: &'a Tree<T, D, G>,
+}
+
+impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
+    type Item = NodeRef<'a, T, D, G>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.next?;
+        let next_node = self.tree.nodes.get_by_slot(next).unwrap();
+        self.next = next_node.slink.next;
+        Some(NodeRef {
+            slot: next,
+            tree: self.tree,
+        })
     }
 }
 

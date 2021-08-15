@@ -22,8 +22,7 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 
 // TODO: deep clone
 
-/// Non-rooted tree layered on top of [`Arena`](crate::Arena). Parenting methods are defined as
-/// [`NodeId`] methods.
+/// Non-rooted tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -124,13 +123,6 @@ impl<T, D, G: Gen> Tree<T, D, G> {
             slot: id.slot,
             tree: self,
         })];
-        // let states = vec![iter::TraverseState {
-        //     node: iter::NodeRef {
-        //         slot: id.slot,
-        //         tree: self,
-        //     },
-        //     tag: iter::TraverseStateTag::Parent,
-        // }];
         iter::Traverse { tree: self, states }
     }
 
@@ -152,13 +144,6 @@ impl<T, D, G: Gen> Tree<T, D, G> {
                     tree: self,
                 },
             ))
-            // states.push(iter::TraverseState {
-            //     node: iter::NodeRef {
-            //         slot: first,
-            //         tree: self,
-            //     },
-            //     tag: iter::TraverseStateTag::ImplicitRootChildren,
-            // });
         };
         iter::Traverse { tree: self, states }
     }
@@ -229,8 +214,4 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
 
         Some(child_id)
     }
-
-    // Remove this node and the children
-
-    // Remove child and their children
 }
