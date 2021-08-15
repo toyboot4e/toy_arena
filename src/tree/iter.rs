@@ -1,8 +1,8 @@
 /*!
-Iterator types for [`Drt`]
+Iterator types for the [`Tree`]
 */
 
-use std::{iter, marker::PhantomData};
+use std::iter;
 
 use derivative::Derivative;
 
@@ -99,7 +99,7 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
 // --------------------------------------------------------------------------------
 // Automatic iterators
 
-/// Return value `Traverse::next`
+/// Return value [`Traverse::next`]
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub enum TraverseItem<'a, T> {
@@ -110,7 +110,7 @@ pub enum TraverseItem<'a, T> {
     EndChildren,
 }
 
-/// Depth-first search
+/// Iterator of a node and their children (depth-first search)
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct Traverse<'a, T, D = (), G: Gen = DefaultGen> {

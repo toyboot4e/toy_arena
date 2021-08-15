@@ -9,7 +9,7 @@ mod test;
 
 pub use iter::TraverseItem;
 
-use std::{cmp::Ordering, fmt::Debug, hash::Hash, ops};
+use std::{fmt::Debug, hash::Hash, ops};
 
 use derivative::Derivative;
 
@@ -22,8 +22,8 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 
 // TODO: deep clone
 
-/// Non-rooted tree layered on top of [`Arena`]. Parenting methods are defined as [`NodeId`]
-/// methods.
+/// Non-rooted tree layered on top of [`Arena`](crate::Arena). Parenting methods are defined as
+/// [`NodeId`] methods.
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -113,8 +113,26 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn get_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T>> {
         self.nodes.get_mut(id)
     }
+}
 
-    // Iterators
+/// Iterators
+/// ---
+impl<T, D, G: Gen> Tree<T, D, G> {
+    /// Depth-first search
+    pub fn traverse(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
+        let states = vec![iter::TraverseState::Parent(iter::NodeRef {
+            slot: id.slot,
+            tree: self,
+        })];
+        // let states = vec![iter::TraverseState {
+        //     node: iter::NodeRef {
+        //         slot: id.slot,
+        //         tree: self,
+        //     },
+        //     tag: iter::TraverseStateTag::Parent,
+        // }];
+        iter::Traverse { tree: self, states }
+    }
 
     /// Children of the implicit root node
     pub fn rooted_nodes(&self) -> iter::SiblingsNext<T, D, G> {
@@ -142,22 +160,6 @@ impl<T, D, G: Gen> Tree<T, D, G> {
             //     tag: iter::TraverseStateTag::ImplicitRootChildren,
             // });
         };
-        iter::Traverse { tree: self, states }
-    }
-
-    /// Depth-first search
-    pub fn traverse(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
-        let states = vec![iter::TraverseState::Parent(iter::NodeRef {
-            slot: id.slot,
-            tree: self,
-        })];
-        // let states = vec![iter::TraverseState {
-        //     node: iter::NodeRef {
-        //         slot: id.slot,
-        //         tree: self,
-        //     },
-        //     tag: iter::TraverseStateTag::Parent,
-        // }];
         iter::Traverse { tree: self, states }
     }
 }
