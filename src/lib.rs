@@ -26,7 +26,15 @@ pub mod tree;
 #[cfg(test)]
 mod test;
 
-use std::{cell::RefCell, fmt::Debug, hash::Hash, iter::*, marker::PhantomData, num::*, ops};
+use std::{
+    cell::RefCell,
+    fmt::{self, Debug},
+    hash::Hash,
+    iter::*,
+    marker::PhantomData,
+    num::*,
+    ops,
+};
 
 use derivative::Derivative;
 use smallvec::SmallVec;
@@ -147,6 +155,12 @@ type RawSlot = u32;
 #[repr(transparent)]
 pub struct Slot {
     raw: RawSlot,
+}
+
+impl fmt::Display for Slot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.raw, f)
+    }
 }
 
 impl Slot {

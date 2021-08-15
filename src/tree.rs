@@ -7,6 +7,8 @@ pub mod iter;
 #[cfg(test)]
 mod test;
 
+pub use iter::TraverseItem;
+
 use std::{cmp::Ordering, fmt::Debug, hash::Hash, ops};
 
 use derivative::Derivative;
@@ -20,7 +22,7 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 
 // TODO: deep clone
 
-/// Directed rooted tree, layered on top of [`Arena`]. Parenting methods are defined as [`NodeId`]
+/// Non-rooted tree layered on top of [`Arena`]. Parenting methods are defined as [`NodeId`]
 /// methods.
 #[derive(Derivative)]
 #[derivative(
@@ -114,11 +116,49 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 
     // Iterators
 
-    pub fn root(&self) -> iter::SiblingsNext<T, D, G> {
+    /// Children of the implicit root node
+    pub fn rooted_nodes(&self) -> iter::SiblingsNext<T, D, G> {
         iter::SiblingsNext {
             next: self.clink.first,
             tree: self,
         }
+    }
+
+    /// Depth-first search
+    pub fn root_traverse(&self) -> iter::Traverse<T, D, G> {
+        let mut states = Vec::new();
+        if let Some(first) = self.clink.first {
+            states.push(iter::TraverseState::ImplicitRootChildren(
+                iter::SiblingsNext {
+                    next: Some(first),
+                    tree: self,
+                },
+            ))
+            // states.push(iter::TraverseState {
+            //     node: iter::NodeRef {
+            //         slot: first,
+            //         tree: self,
+            //     },
+            //     tag: iter::TraverseStateTag::ImplicitRootChildren,
+            // });
+        };
+        iter::Traverse { tree: self, states }
+    }
+
+    /// Depth-first search
+    pub fn traverse(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
+        let states = vec![iter::TraverseState::Parent(iter::NodeRef {
+            slot: id.slot,
+            tree: self,
+        })];
+        // let states = vec![iter::TraverseState {
+        //     node: iter::NodeRef {
+        //         slot: id.slot,
+        //         tree: self,
+        //     },
+        //     tag: iter::TraverseStateTag::Parent,
+        // }];
+        iter::Traverse { tree: self, states }
     }
 }
 
@@ -191,14 +231,4 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
     // Remove this node and the children
 
     // Remove child and their children
-}
-
-impl<T, D, G: Gen> NodeId<T, D, G> {
-    // /// Iterator of this node and their children
-    // pub fn traverse<'a>(
-    //     &self,
-    //     tree: &'a Tree<T, D, G>,
-    // ) -> impl Iterator<Item = iter::TraverseItem<'a, T>> {
-    //     iter::Traverse::new(tree, self.slot())
-    // }
 }
