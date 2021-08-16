@@ -17,7 +17,7 @@ impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
             let slot = self.slot;
             self.slot.inc();
 
-            let index = match unsafe { self.arena.upgrade(slot) } {
+            let index = match self.arena.upgrade(slot) {
                 Some(i) => i,
                 None => continue,
             };
@@ -178,11 +178,22 @@ impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItemIterMut<'a, T, D, G> {}
 
 /// [`Arena::entries_mut`] → mutable access to arena entries
 pub struct EntryBindings<'a, T, D, G: Gen> {
-    // arena: &'a mut Arena<T, D, G>,
     pub(crate) arena: &'a mut Arena<T, D, G>,
     pub(crate) slot: Slot,
     pub(crate) n_items: usize,
     pub(crate) n_visited: usize,
+}
+
+impl<'a, T, D, G: Gen> EntryBindings<'a, T, D, G> {
+    pub(crate) fn new(arena: &'a mut Arena<T, D, G>) -> Self {
+        let n_items = arena.n_items.into();
+        Self {
+            arena,
+            slot: Slot::default(),
+            n_items,
+            n_visited: 0,
+        }
+    }
 }
 
 impl<'a, T, D, G: Gen> Iterator for EntryBindings<'a, T, D, G> {

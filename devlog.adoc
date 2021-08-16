@@ -21,6 +21,8 @@ Both are unsafe, but I _think_ it doesn't break Rust's safety rule (practically 
 * Aug 14, 2021
 +
 I changed all `PhantomData<T>` to `PhantomData<fn() -> T>`
+
+* Aug 15, 2021
 +
-I added {tree} support, following {indextree}.
+I added WIP {tree} support, following the API of {indextree}.
 

@@ -163,6 +163,12 @@ pub struct Slot {
     raw: RawSlot,
 }
 
+impl Into<usize> for Slot {
+    fn into(self) -> usize {
+        self.raw as usize
+    }
+}
+
 impl fmt::Display for Slot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.raw, f)
@@ -565,14 +571,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// See [`EntryBindsMut`] and [`EntryBindMut`]
-    pub fn bindings_mut(self: &mut Self) -> EntryBindings<T, D, G> {
-        let n_items = self.n_items.raw as usize;
-        EntryBindings {
-            arena: self,
-            slot: Slot::default(),
-            n_items,
-            n_visited: 0,
-        }
+    pub fn bindings_mut(&mut self) -> EntryBindings<T, D, G> {
+        EntryBindings::new(self)
     }
 }
 

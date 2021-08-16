@@ -22,7 +22,8 @@ pub struct NodeRef<'a, T, D = (), G: Gen = DefaultGen> {
 
 impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
     pub fn id(&self) -> NodeId<T, D, G> {
-        unsafe { self.tree.nodes.upgrade(self.slot).unwrap() }
+        // we now the targetting entry exists
+        self.tree.nodes.upgrade(self.slot).unwrap()
     }
 
     pub fn node(&self) -> &'a Node<T> {
