@@ -30,6 +30,7 @@ fn cell() {
 
     {
         let cell = arena.cell();
+
         let x0 = cell.get_mut(ix0).unwrap();
         let x1 = cell.get_mut(ix1).unwrap();
         let x2 = cell.get_mut(ix2).unwrap();

@@ -3,17 +3,20 @@ Extensible generational arena for various uses. [`Example`](example)
 
 Goals: Tiny code and real use. Non-goals: Super fast performance.
 
-NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
-
 # Features
-* Borrow check per item, not per container ([`Arena::cell`])
-* Mutable iterator ([`Arena::entries_mut`])
-* Distinct arena types (second type parameter of [`Arena<T, D, G>`])
-* Customizable generation type (third type parameter of [`Arena<T, D, G>`])
+Flexibilities:
+* Builtin support for distinct arena types (second type parameter of [`Arena<T, D, G>`]).
+* Customizable generation type (third type parameter of [`Arena<T, D, G>`]).
+
+Unsafe goodies:
+* Borrow check per item, not per container ([`Arena::cell`]).
+* Mutable iterator ([`Arena::entries_mut`]), rather than raw slot iteration.
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
 * [thunderdome](https://docs.rs/thunderdome/latest)
+
+NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 */
 
 // use closures to implement `IntoIter`
@@ -150,7 +153,10 @@ impl<T, D, G: Gen> Index<T, D, G> {
 
 type RawSlot = u32;
 
-/// Index of the backing `Vec` in [`Arena`]. Can be upgrade to [`Index`] with [`Arena::index_at`]
+/**
+Index of the backing `Vec` in [`Arena`]. Can be upgrade to [`Index`] by arena, but users are
+encouraged to perfer mutable iterators.
+*/
 #[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Slot {
@@ -168,7 +174,8 @@ impl Slot {
 
     /// Creates slot from raw value
     /// # Safety
-    /// if the raw slot > arena.capacity(), use of the slot will cause panic.
+    /// if the raw slot is bigger than the length of the internal vec, use of the slot will cause
+    /// panic. This is because `toy_arena` assumes [`Index`] is only used for the belonging arena.
     pub unsafe fn from_raw(raw: RawSlot) -> Self {
         Self { raw }
     }
@@ -195,6 +202,9 @@ impl Slot {
 }
 
 /// Generation type, one of the unsized `NonZero` types in [`std::num`]
+///
+/// Generation of a first item of a slot is always `2` (since it's using `NonZero` type under the
+/// hood).
 pub trait Gen: Debug + Clone + Copy + PartialEq + Eq + Hash + 'static {
     fn default_gen() -> Self;
     fn next(&mut self) -> Self;
@@ -295,7 +305,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         Index::<T, D, G>::new(slot, gen)
     }
 
-    /// Removes all the items
+    /// Removes all the items.
     pub fn clear(&mut self) {
         self.free.clear();
         self.n_items = Slot { raw: 0 };
@@ -460,10 +470,12 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// Upgrades slot to `Index`. Prefer [`Arena::entries_mut`]
-    /// # Safety
-    /// Accessors use given slot without checking the range, so if slot.raw > arena.capacinty(), it
-    /// will cause panic.
-    pub unsafe fn upgrade(&self, slot: Slot) -> Option<Index<T, D, G>> {
+    pub fn upgrade(&self, slot: Slot) -> Option<Index<T, D, G>> {
+        // boundary check
+        if slot.raw as usize >= self.entries.len() {
+            return None;
+        }
+
         self.entries.get(slot.raw as usize).and_then(|e| {
             if e.data.is_some() {
                 Some(Index::new(slot, e.gen))
@@ -665,7 +677,8 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
             }
         }
 
-        let ptr = self.arena.get(index)?;
-        Some(unsafe { &mut * (ptr as * const _ as * mut _ ) })
+        // `&T` -> `&mut T`
+        let ref_ = self.arena.get(index)?;
+        Some(unsafe { &mut *(ref_ as *const _ as *mut _) })
     }
 }
