@@ -165,7 +165,7 @@ fn entry_bind() {
     let mut arena = Arena::<i32>::from_iter(0..100);
     // simulate `drain_filter::<Vec<_>>()`
     let mut drain = Vec::new();
-    for entry in arena.entries_mut() {
+    for entry in arena.bindings_mut() {
         if entry.get() % 2 == 0 {
             let data = entry.remove();
             drain.push(data);

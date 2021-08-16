@@ -201,10 +201,12 @@ impl Slot {
     }
 }
 
-/// Generation type, one of the unsized `NonZero` types in [`std::num`]
-///
-/// Generation of a first item of a slot is always `2` (since it's using `NonZero` type under the
-/// hood).
+/**
+Generation type, one of the unsized `NonZero` types in [`std::num`]
+
+Generation of a first item of a slot is always `2` (since it's using `NonZero` type under the
+hood).
+*/
 pub trait Gen: Debug + Clone + Copy + PartialEq + Eq + Hash + 'static {
     fn default_gen() -> Self;
     fn next(&mut self) -> Self;
@@ -517,8 +519,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 /// # Iterators
 impl<T, D, G: Gen> Arena<T, D, G> {
     /// `(Index, &T)`
-    pub fn iter(&self) -> IndexedItems<T, D, G> {
-        IndexedItems {
+    pub fn iter(&self) -> IndexedItemIter<T, D, G> {
+        IndexedItemIter {
             entries: self.entries.iter().enumerate(),
             n_items: self.n_items.raw as usize,
             n_visited: 0,
@@ -527,8 +529,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// `(Index, &mut T)`
-    pub fn iter_mut(&mut self) -> IndexedItemsMut<T, D, G> {
-        IndexedItemsMut {
+    pub fn iter_mut(&mut self) -> IndexedItemIterMut<T, D, G> {
+        IndexedItemIterMut {
             entries: self.entries.iter_mut().enumerate(),
             n_items: self.n_items.raw as usize,
             n_visited: 0,
@@ -537,8 +539,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// `&T`
-    pub fn items(&self) -> Items<T, G> {
-        Items {
+    pub fn items(&self) -> ItemIter<T, G> {
+        ItemIter {
             entries: self.entries.iter(),
             n_items: self.n_items.raw as usize,
             n_visited: 0,
@@ -546,8 +548,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// `&mut T`
-    pub fn items_mut(&mut self) -> ItemsMut<T, G> {
-        ItemsMut {
+    pub fn items_mut(&mut self) -> ItemIterMut<T, G> {
+        ItemIterMut {
             entries: self.entries.iter_mut(),
             n_items: self.n_items.raw as usize,
             n_visited: 0,
@@ -563,9 +565,9 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// See [`EntryBindsMut`] and [`EntryBindMut`]
-    pub fn entries_mut(self: &mut Self) -> EntryBindsMut<T, D, G> {
+    pub fn bindings_mut(self: &mut Self) -> EntryBindings<T, D, G> {
         let n_items = self.n_items.raw as usize;
-        EntryBindsMut {
+        EntryBindings {
             arena: self,
             slot: Slot::default(),
             n_items,
@@ -588,7 +590,7 @@ impl<T, D, G: Gen> ops::IndexMut<Index<T, D, G>> for Arena<T, D, G> {
 }
 
 impl<'a, T, D, G: Gen> IntoIterator for &'a Arena<T, D, G> {
-    type IntoIter = IndexedItems<'a, T, D, G>;
+    type IntoIter = IndexedItemIter<'a, T, D, G>;
     type Item = <Self::IntoIter as Iterator>::Item;
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -596,7 +598,7 @@ impl<'a, T, D, G: Gen> IntoIterator for &'a Arena<T, D, G> {
 }
 
 impl<'a, T, D, G: Gen> IntoIterator for &'a mut Arena<T, D, G> {
-    type IntoIter = IndexedItemsMut<'a, T, D, G>;
+    type IntoIter = IndexedItemIterMut<'a, T, D, G>;
     type Item = <Self::IntoIter as Iterator>::Item;
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
@@ -616,8 +618,10 @@ impl<T, D, G: Gen> FromIterator<T> for Arena<T, D, G> {
     }
 }
 
-/// Creates an arena and inserts given values. Note that you might to have to annotate your
-/// `Arena<T>` when the type inference doesn't work well.
+/**
+Creates an arena and inserts given values. Note that you might to have to annotate your `Arena<T>`
+when the type inference doesn't work well.
+*/
 #[macro_export]
 macro_rules! arena {
     ($($data:expr),*) => {{

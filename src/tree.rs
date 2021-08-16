@@ -15,15 +15,18 @@ use derivative::Derivative;
 
 use crate::{DefaultGen, Gen, Slot};
 
-/// [`Index`](crate::Index) of node in [`Tree`]
+/**
+[`Index`](crate::Index) of node in [`Tree`]
+*/
 pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T>, D, G>;
 
 type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 
 // TODO: deep clone
 
-/// Non-rooted tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting
-/// methods.
+/**
+Non-rooted tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting methods.
+*/
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -51,7 +54,7 @@ pub struct Node<T> {
     clink: ChildLink,
 }
 
-/// Siblings are connected as linked list
+/// Doubly linked list indices for siblings
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 struct SiblingLink {
     /// Next sibling
@@ -60,7 +63,7 @@ struct SiblingLink {
     prev: Option<Slot>,
 }
 
-/// Children are also linked list and the start and end is referred to
+/// Indices for referring to children
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 struct ChildLink {
     first: Option<Slot>,

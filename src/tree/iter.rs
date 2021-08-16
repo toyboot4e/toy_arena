@@ -2,6 +2,9 @@
 Iterator types for the [`Tree`]
 */
 
+// TODO: impl double-ended iterator
+// TODO: directon type parameter
+
 use std::iter;
 
 use derivative::Derivative;
@@ -61,7 +64,6 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
 // - Implement automatic iterator
 
 /// Iterator that walks through siblings
-// TODO: directon type parameter
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct SiblingsNext<'a, T, D = (), G: Gen = DefaultGen> {
