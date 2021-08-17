@@ -36,7 +36,7 @@ use std::{
     iter::*,
     marker::PhantomData,
     num::*,
-    ops,
+    ops::{self, DerefMut},
 };
 
 use derivative::Derivative;
@@ -64,16 +64,8 @@ original values (and see if the original value is still there or alreadly replac
 )]
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
-    /// Number of occupied entries
-    ///
-    /// Wrapped in  [`iter::EntryBind`]`RefCell` for [`iter::EntryBind`]
     #[derivative(Hash(hash_with = "self::refcell_hash"))]
-    n_items: RefCell<Slot>,
-    /// If `free` is empty, `entries[0..entries.len()]` is occupied
-    ///
-    /// Wrapped in Wrapped in  [`iter::EntryBind`]`RefCell` for [`iter::EntryBind`]
-    #[derivative(Hash(hash_with = "self::refcell_hash"))]
-    free: RefCell<Vec<Slot>>,
+    slot_states: RefCell<SlotStates>,
     /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
     _distinct: PhantomData<fn() -> D>,
@@ -81,7 +73,14 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
 }
 
 fn refcell_hash<T: Hash, H: std::hash::Hasher>(x: &RefCell<T>, state: &mut H) {
+    // FIXME: unnecessary borrow
     x.borrow().hash(state);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SlotStates {
+    n_items: Slot,
+    free: Vec<Slot>,
 }
 
 /* Note on `dervative` use:
@@ -280,8 +279,10 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
         Self {
             entries: data,
-            free: RefCell::new(free),
-            n_items: RefCell::new(Slot::default()),
+            slot_states: RefCell::new(SlotStates {
+                free,
+                n_items: Default::default(),
+            }),
             _distinct: PhantomData,
         }
     }
@@ -295,7 +296,9 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Number of items in this arena
     pub fn len(&self) -> usize {
-        self.n_items.borrow().raw as usize
+        // FIXME: unnecessary borrow
+        let slot_states = self.slot_states.borrow();
+        slot_states.n_items.raw as usize
     }
 
     pub fn is_empty(&self) -> bool {
@@ -317,7 +320,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let gen = {
             debug_assert!(entry.data.is_none(), "free slot occupied?");
             entry.data = Some(data);
-            self.n_items.get_mut().inc_mut();
+            let mut slot_states = self.slot_states.borrow_mut();
+            slot_states.n_items.inc_mut();
             entry.gen.next()
         };
 
@@ -326,8 +330,9 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Removes all the items.
     pub fn clear(&mut self) {
-        self.free.get_mut().clear();
-        *self.n_items.get_mut() = Slot { raw: 0 };
+        let mut slot_states = self.slot_states.borrow_mut();
+        slot_states.free.clear();
+        slot_states.n_items = Slot { raw: 0 };
     }
 
     /// Removes all the items and resets generation of every entry.
@@ -345,14 +350,18 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             // generation mistmatch: can't remove
             None
         } else {
-            Some(self::remove_binded(entry, &self.n_items, &self.free, index))
+            Some(self::remove_binded(
+                entry,
+                self.slot_states.borrow_mut().deref_mut(),
+                index,
+            ))
         }
     }
 
     /// Returns none if the generation matches. Returns some index on mismatch or no data
     pub fn invalidate(&mut self, index: Index<T, D, G>) -> Option<Index<T, D, G>> {
         let entry = &mut self.entries[index.slot.raw as usize];
-        self::invalidate(entry, &self.n_items, &self.free, index)
+        self::invalidate(entry, self.slot_states.borrow_mut().deref_mut(), index)
     }
 
     pub fn replace(&mut self, index: Index<T, D, G>, new_data: T) -> Index<T, D, G> {
@@ -360,12 +369,18 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             self.insert(new_data)
         } else {
             let entry = &mut self.entries[index.slot.raw as usize];
-            self::replace_binded(entry, index.slot, new_data)
+            self::replace_binded(
+                entry,
+                index.slot,
+                self.slot_states.borrow_mut().deref_mut(),
+                new_data,
+            )
         }
     }
 
     fn next_free_slot(&mut self) -> Slot {
-        if let Some(slot) = self.free.get_mut().pop() {
+        let mut slot_states = self.slot_states.borrow_mut();
+        if let Some(slot) = slot_states.free.pop() {
             slot
         } else if self.entries.len() < self.entries.capacity() {
             let slot = Slot {
@@ -382,6 +397,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             } else {
                 cap *= 2;
             }
+            drop(slot_states);
             self.extend(cap);
             self.next_free_slot()
         }
@@ -397,7 +413,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
         // push in reverse (since the free stack is LIFO)
         for raw in (prev_cap as RawSlot..new_cap as RawSlot).rev() {
-            self.free.get_mut().push(Slot { raw });
+            let mut slot_states = self.slot_states.borrow_mut();
+            slot_states.free.push(Slot { raw });
         }
     }
 
@@ -417,6 +434,49 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             i += 1;
         }
     }
+}
+
+/// Borrows arena partially
+pub(crate) fn remove_binded<T, D, G: Gen>(
+    entry: &mut Entry<T, G>,
+    slot_states: &mut SlotStates,
+    index: Index<T, D, G>,
+) -> T {
+    debug_assert!(entry.data.is_some());
+    let taken = entry.data.take().unwrap();
+    slot_states.n_items.dec_mut();
+    slot_states.free.push(index.slot);
+    taken
+}
+
+/// Borrows arena partially
+pub(crate) fn invalidate<T, D, G: Gen>(
+    entry: &mut Entry<T, G>,
+    slot_states: &mut SlotStates,
+    index: Index<T, D, G>,
+) -> Option<Index<T, D, G>> {
+    if entry.gen != index.gen || entry.data.is_none() {
+        // generation mismatch: can't invalidate
+        Some(Index::new(index.slot, entry.gen.clone()))
+    } else {
+        entry.data = None;
+        slot_states.n_items.dec_mut();
+        slot_states.free.push(index.slot);
+        None
+    }
+}
+
+/// Borrows arena partially
+pub(crate) fn replace_binded<T, D, G: Gen>(
+    entry: &mut Entry<T, G>,
+    slot: Slot,
+    slot_states: &mut SlotStates,
+    new: T,
+) -> Index<T, D, G> {
+    debug_assert!(entry.data.is_some());
+    entry.data = Some(new);
+    entry.gen.next();
+    Index::<T, D, G>::new(slot, entry.gen)
 }
 
 /// # Accessors
@@ -534,7 +594,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn iter(&self) -> IndexedItemIter<T, D, G> {
         IndexedItemIter {
             entries: self.entries.iter().enumerate(),
-            n_items: self.n_items.borrow().raw as usize,
+            n_items: self.slot_states.borrow().n_items.raw as usize,
             n_visited: 0,
             _distinct: PhantomData,
         }
@@ -544,7 +604,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn iter_mut(&mut self) -> IndexedItemIterMut<T, D, G> {
         IndexedItemIterMut {
             entries: self.entries.iter_mut().enumerate(),
-            n_items: self.n_items.borrow().raw as usize,
+            n_items: self.slot_states.get_mut().n_items.raw as usize,
             n_visited: 0,
             _distinct: PhantomData,
         }
@@ -554,7 +614,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn items(&self) -> ItemIter<T, G> {
         ItemIter {
             entries: self.entries.iter(),
-            n_items: self.n_items.borrow().raw as usize,
+            n_items: self.slot_states.borrow().n_items.raw as usize,
             n_visited: 0,
         }
     }
@@ -563,7 +623,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn items_mut(&mut self) -> ItemIterMut<T, G> {
         ItemIterMut {
             entries: self.entries.iter_mut(),
-            n_items: self.n_items.borrow().raw as usize,
+            n_items: self.slot_states.get_mut().n_items.raw as usize,
             n_visited: 0,
         }
     }
