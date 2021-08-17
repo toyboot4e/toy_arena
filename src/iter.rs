@@ -15,7 +15,7 @@ impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
     fn next(&mut self) -> Option<T> {
         while (self.slot.raw as usize) < self.arena.entries.len() {
             let slot = self.slot;
-            self.slot.inc();
+            self.slot.inc_mut();
 
             let index = match self.arena.upgrade(slot) {
                 Some(i) => i,
@@ -178,20 +178,28 @@ impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItemIterMut<'a, T, D, G> {}
 
 /// [`Arena::entries_mut`] → mutable access to arena entries
 pub struct EntryBindings<'a, T, D, G: Gen> {
-    pub(crate) arena: &'a mut Arena<T, D, G>,
-    pub(crate) slot: Slot,
-    pub(crate) n_items: usize,
-    pub(crate) n_visited: usize,
+    entries: std::slice::IterMut<'a, Entry<T, G>>,
+    arena_n_items: &'a RefCell<Slot>,
+    arena_free: &'a RefCell<Vec<Slot>>,
+    //
+    slot: Slot,
+    n_items: usize,
+    n_visited: usize,
+    _distinct: PhantomData<fn() -> D>,
 }
 
 impl<'a, T, D, G: Gen> EntryBindings<'a, T, D, G> {
     pub(crate) fn new(arena: &'a mut Arena<T, D, G>) -> Self {
-        let n_items = arena.n_items.into();
+        let n_items = (*arena.n_items.borrow_mut()).into();
         Self {
-            arena,
+            entries: arena.entries.iter_mut(),
+            arena_n_items: &arena.n_items,
+            arena_free: &arena.free,
+            //
             slot: Slot::default(),
             n_items,
             n_visited: 0,
+            _distinct: PhantomData,
         }
     }
 }
@@ -200,16 +208,16 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindings<'a, T, D, G> {
     type Item = EntryBind<'a, T, D, G>;
     fn next(&mut self) -> Option<Self::Item> {
         while self.n_visited < self.n_items {
-            let slot = self.slot;
-            self.slot.inc();
-
-            let entry = &mut self.arena.entries[slot.raw as usize];
+            let entry = self.entries.next()?;
+            self.slot.inc_mut();
             if let Some(_data) = &mut entry.data {
                 self.n_visited += 1;
-                let index = Index::new(slot, entry.gen.clone());
+                let index = Index::new(self.slot, entry.gen.clone());
                 return Some(EntryBind {
-                    // UNSAFE: cannot infer lifetime
-                    arena: unsafe { &mut *(self.arena as *mut _) },
+                    entry,
+                    slot: self.slot,
+                    arena_n_items: self.arena_n_items,
+                    arena_free: &self.arena_free,
                     index,
                 });
             }
@@ -226,41 +234,45 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindings<'a, T, D, G> {
 
 /// Mutable access to an arena entry
 pub struct EntryBind<'a, T, D, G: Gen> {
-    arena: &'a mut Arena<T, D, G>,
+    entry: &'a mut Entry<T, G>,
+    slot: Slot,
+    arena_n_items: &'a RefCell<Slot>,
+    arena_free: &'a RefCell<Vec<Slot>>,
     index: Index<T, D, G>,
 }
 
-impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G>
-where
-    Index<T, D, G>: Copy,
-{
+impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
     pub fn get(&self) -> &T {
-        self.arena.get(self.index).unwrap()
+        self.entry.data.as_ref().unwrap()
     }
 
     pub fn get_mut(&mut self) -> &mut T {
-        self.arena.get_mut(self.index).unwrap()
+        self.entry.data.as_mut().unwrap()
     }
 
     pub fn index(&self) -> Index<T, D, G> {
         self.index
     }
 
-    pub fn invalidate(self) {
-        let newer_node = self.arena.invalidate(self.index);
-        debug_assert!(newer_node.is_none());
+    pub fn invalidate(self) -> Option<Index<T, D, G>> {
+        crate::invalidate(
+            self.entry,
+            &self.arena_n_items,
+            &self.arena_free,
+            self.index,
+        )
     }
 
     pub fn remove(self) -> T {
-        self.arena.remove(self.index).unwrap()
+        crate::remove_binded(
+            self.entry,
+            &self.arena_n_items,
+            &self.arena_free,
+            self.index,
+        )
     }
 
-    pub fn replace(self, new: T) -> Self {
-        let index = self.arena.replace(self.index, new);
-        debug_assert_eq!(self.index.slot, index.slot);
-        Self {
-            arena: self.arena,
-            index,
-        }
+    pub fn replace(self, new: T) {
+        crate::replace_binded::<T, D, G>(self.entry, self.slot, new);
     }
 }
