@@ -45,6 +45,24 @@ impl<'a, T, D, G: Gen> Drop for Drain<'a, T, D, G> {
     }
 }
 
+macro_rules! borrow {
+    // &'a T or &'a mut T
+    (ref 'a T) => {
+        &'a T
+    };
+    (mut 'a T) => {
+        &'a mut T
+    };
+
+    // &data or &mut data
+    (ref, $e:expr) => {
+        &$e
+    };
+    (mut, $e:expr) => {
+        &mut $e
+    };
+}
+
 macro_rules! impl_item_iter {
     ($name:ident, $borrow:ident) => {
         impl_item_iter!(
@@ -57,7 +75,7 @@ macro_rules! impl_item_iter {
 
     ($name:ident, $borrow:ident, $next:expr, $next_back:expr) => {
         impl<'a, T, G: Gen> Iterator for $name<'a, T, G> {
-            type Item = impl_item_iter!($borrow 'a T);
+            type Item = borrow!($borrow 'a T);
             fn next(&mut self) -> Option<Self::Item> {
                 impl_item_iter!(self, $borrow, $next)
             }
@@ -78,17 +96,10 @@ macro_rules! impl_item_iter {
         impl<'a, T, G: Gen> ExactSizeIterator for $name<'a, T, G> {}
     };
 
-    (ref 'a T) => {
-        &'a T
-    };
-    (mut 'a T) => {
-        &'a mut T
-    };
-
     ($me:expr, $borrow:ident, $next:expr) => {{
         while $me.n_visited < $me.n_items {
             let entry = ($next)($me)?;
-            if let Some(data) = impl_item_iter!($borrow, entry.data) {
+            if let Some(data) = borrow!($borrow, entry.data) {
                 $me.n_visited += 1;
                 return Some(data);
             }
@@ -96,14 +107,6 @@ macro_rules! impl_item_iter {
 
         None
     }};
-
-    // &data or &mut data
-    (ref, $e:expr) => {
-        &$e
-    };
-    (mut, $e:expr) => {
-        &mut $e
-    };
 }
 
 /// [`Arena::items`] → `&T`
@@ -138,7 +141,7 @@ macro_rules! impl_indexed_iter {
 
     ($name:ident, $borrow:ident, $next:expr, $next_back:expr) => {
         impl<'a, T, D, G: Gen> Iterator for $name<'a, T, D, G> {
-            type Item = (Index<T, D, G>, impl_indexed_iter!($borrow 'a T));
+            type Item = (Index<T, D, G>, borrow!($borrow 'a T));
             fn next(&mut self) -> Option<Self::Item> {
                 impl_indexed_iter!(self, $borrow, $next)
             }
@@ -159,17 +162,10 @@ macro_rules! impl_indexed_iter {
         impl<'a, T, D, G: Gen> ExactSizeIterator for $name<'a, T, D, G> {}
     };
 
-    (ref 'a T) => {
-        &'a T
-    };
-    (mut 'a T) => {
-        &'a mut T
-    };
-
     ($me:expr, $borrow:ident, $next:expr) => {{
         while $me.n_visited < $me.n_items {
             let (slot, entry) = $me.entries.next()?;
-            if let Some(data) = impl_indexed_iter!($borrow, entry.data) {
+            if let Some(data) = borrow!($borrow, entry.data) {
                 $me.n_visited += 1;
                 let slot = Slot {
                     raw: slot as RawSlot,
@@ -181,14 +177,6 @@ macro_rules! impl_indexed_iter {
 
         None
     }};
-
-    // &data or &mut data
-    (ref, $e:expr) => {
-        &$e
-    };
-    (mut, $e:expr) => {
-        &mut $e
-    };
 }
 
 /// [`Arena::iter`] → `(Index, &T)`
