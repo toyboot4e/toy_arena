@@ -389,12 +389,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             self.insert(new_data)
         } else {
             let entry = &mut self.entries[index.slot.raw as usize];
-            self::replace_binded(
-                entry,
-                index.slot,
-                self.slot_states.get_mut().deref_mut(),
-                new_data,
-            )
+            self::replace_binded(entry, index.slot, new_data)
         }
     }
 
@@ -433,7 +428,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
         // push in reverse (since the free stack is LIFO)
         for raw in (prev_cap as RawSlot..new_cap as RawSlot).rev() {
-            let mut slot_states = self.slot_states.get_mut();
+            let slot_states = self.slot_states.get_mut();
             slot_states.free.push(Slot { raw });
         }
     }
@@ -490,7 +485,6 @@ pub(crate) fn invalidate<T, D, G: Gen>(
 pub(crate) fn replace_binded<T, D, G: Gen>(
     entry: &mut Entry<T, G>,
     slot: Slot,
-    slot_states: &mut SlotStates,
     new: T,
 ) -> Index<T, D, G> {
     debug_assert!(entry.data.is_some());

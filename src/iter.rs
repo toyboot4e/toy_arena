@@ -319,11 +319,6 @@ impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
     }
 
     pub fn replace(self, new: T) {
-        crate::replace_binded::<T, D, G>(
-            self.entry,
-            self.index.slot,
-            unsafe { &mut *self.slot_states },
-            new,
-        );
+        crate::replace_binded::<T, D, G>(self.entry, self.index.slot, new);
     }
 }
