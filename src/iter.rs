@@ -55,10 +55,10 @@ macro_rules! borrow {
     };
 
     // &data or &mut data
-    (ref, $e:expr) => {
+    (ref $e:expr) => {
         &$e
     };
-    (mut, $e:expr) => {
+    (mut $e:expr) => {
         &mut $e
     };
 }
@@ -99,7 +99,7 @@ macro_rules! impl_item_iter {
     ($me:expr, $borrow:ident, $next:expr) => {{
         while $me.n_visited < $me.n_items {
             let entry = ($next)($me)?;
-            if let Some(data) = borrow!($borrow, entry.data) {
+            if let Some(data) = borrow!($borrow entry.data) {
                 $me.n_visited += 1;
                 return Some(data);
             }
@@ -165,7 +165,7 @@ macro_rules! impl_indexed_iter {
     ($me:expr, $borrow:ident, $next:expr) => {{
         while $me.n_visited < $me.n_items {
             let (slot, entry) = $me.entries.next()?;
-            if let Some(data) = borrow!($borrow, entry.data) {
+            if let Some(data) = borrow!($borrow entry.data) {
                 $me.n_visited += 1;
                 let slot = Slot {
                     raw: slot as RawSlot,
