@@ -528,15 +528,10 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         ix2: Index<T, D, G>,
     ) -> Option<(&mut T, &mut T)> {
         assert_ne!(ix1.slot(), ix2.slot());
-        let x1 = self.get(ix1)?;
-        let x2 = self.get(ix2)?;
-        Some(unsafe {
-            (
-                // TODO: Avoid UB
-                &mut *(x1 as *const _ as *mut _),
-                &mut *(x2 as *const _ as *mut _),
-            )
-        })
+        let x1 = self.get_mut(ix1)? as *mut _;
+        let x2 = self.get_mut(ix2)?;
+        // TODO: avoid UB
+        Some(unsafe { (&mut *(x1 as *const _ as *mut _), x2) })
     }
 
     pub fn get3_mut(
@@ -546,15 +541,15 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         ix3: Index<T, D, G>,
     ) -> Option<(&mut T, &mut T, &mut T)> {
         assert!(ix1.slot() != ix2.slot() && ix2.slot() != ix3.slot() && ix3.slot() != ix1.slot());
-        let x1 = self.get(ix1)?;
-        let x2 = self.get(ix2)?;
-        let x3 = self.get(ix3)?;
+        let x1 = self.get_mut(ix1)? as *mut _;
+        let x2 = self.get_mut(ix2)? as *mut _;
+        let x3 = self.get_mut(ix3)?;
         Some(unsafe {
             (
-                // TODO: Avoid UB
+                // TODO: avoid UB
                 &mut *(x1 as *const _ as *mut _),
                 &mut *(x2 as *const _ as *mut _),
-                &mut *(x3 as *const _ as *mut _),
+                x3,
             )
         })
     }
@@ -585,22 +580,17 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         self.entries.get(slot.raw as usize)?.data.as_ref()
     }
 
-    // /// Internal use only
-    // pub(crate) fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
-    //     self.entries.get_mut(slot.raw as usize)?.data.as_mut()
-    // }
+    /// Internal use only
+    pub(crate) fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
+        self.entries.get_mut(slot.raw as usize)?.data.as_mut()
+    }
 
     /// Internal use only
     pub(crate) fn get2_mut_by_slot(&mut self, s1: Slot, s2: Slot) -> Option<(&mut T, &mut T)> {
         debug_assert_ne!(s1, s2);
-        let x1 = self.get_by_slot(s1)?;
-        let x2 = self.get_by_slot(s2)?;
-        Some(unsafe {
-            (
-                &mut *(x1 as *const _ as *mut _),
-                &mut *(x2 as *const _ as *mut _),
-            )
-        })
+        let x1 = self.get_mut_by_slot(s1)? as *mut _;
+        let x2 = self.get_mut_by_slot(s2)?;
+        Some(unsafe { (&mut *x1, x2) })
     }
 }
 
