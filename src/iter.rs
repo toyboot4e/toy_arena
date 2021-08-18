@@ -179,7 +179,7 @@ impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItemIterMut<'a, T, D, G> {}
 /// [`Arena::entries_mut`] → mutable access to arena entries
 pub struct EntryBindings<'a, T, D, G: Gen> {
     entries: std::slice::IterMut<'a, Entry<T, G>>,
-    slot_states: &'a RefCell<SlotStates>,
+    slot_states: &'a mut UnsafeCell<SlotStates>,
     //
     slot: Slot,
     n_items: usize,
@@ -189,11 +189,11 @@ pub struct EntryBindings<'a, T, D, G: Gen> {
 
 impl<'a, T, D, G: Gen> EntryBindings<'a, T, D, G> {
     pub(crate) fn new(arena: &'a mut Arena<T, D, G>) -> Self {
-        let slot_states = arena.slot_states.borrow_mut();
-        let n_items = slot_states.n_items.into();
+        // safety: no mutable alias
+        let n_items = arena.slot_states.get_mut().n_items.into();
         Self {
             entries: arena.entries.iter_mut(),
-            slot_states: &arena.slot_states,
+            slot_states: &mut arena.slot_states,
             //
             slot: Slot::default(),
             n_items,
@@ -214,8 +214,8 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindings<'a, T, D, G> {
                 let index = Index::new(self.slot, entry.gen.clone());
                 return Some(EntryBind {
                     entry,
-                    slot: self.slot,
-                    slot_states: &self.slot_states,
+                    // NOTE: This is why we need unsafe cell
+                    slot_states: self.slot_states,
                     index,
                 });
             }
@@ -233,8 +233,7 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindings<'a, T, D, G> {
 /// Mutable access to an arena entry
 pub struct EntryBind<'a, T, D, G: Gen> {
     entry: &'a mut Entry<T, G>,
-    slot_states: &'a RefCell<SlotStates>,
-    slot: Slot,
+    slot_states: &'a UnsafeCell<SlotStates>,
     index: Index<T, D, G>,
 }
 
@@ -254,7 +253,7 @@ impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
     pub fn invalidate(self) -> Option<Index<T, D, G>> {
         crate::invalidate(
             self.entry,
-            self.slot_states.borrow_mut().deref_mut(),
+            unsafe { &mut *self.slot_states.get() },
             self.index,
         )
     }
@@ -262,7 +261,7 @@ impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
     pub fn remove(self) -> T {
         crate::remove_binded(
             self.entry,
-            self.slot_states.borrow_mut().deref_mut(),
+            unsafe { &mut *self.slot_states.get() },
             self.index,
         )
     }
@@ -271,7 +270,7 @@ impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
         crate::replace_binded::<T, D, G>(
             self.entry,
             self.index.slot,
-            self.slot_states.borrow_mut().deref_mut(),
+            unsafe { &mut *self.slot_states.get() },
             new,
         );
     }

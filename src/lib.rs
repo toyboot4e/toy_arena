@@ -19,6 +19,8 @@ Unsafe goodies:
 NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 */
 
+// FIXME: don't use std::slice::IterMut
+
 // use closures to implement `IntoIter`
 #![feature(type_alias_impl_trait)]
 
@@ -30,7 +32,7 @@ pub mod tree;
 mod test;
 
 use std::{
-    cell::RefCell,
+    cell::{RefCell, UnsafeCell},
     fmt::{self, Debug},
     hash::Hash,
     iter::*,
@@ -59,22 +61,38 @@ original values (and see if the original value is still there or alreadly replac
     Debug(bound = "T: Debug"),
     Clone(bound = "T: Clone"),
     PartialEq(bound = "T: PartialEq"),
-    Eq(bound = "T: PartialEq"),
+    Eq(bound = "T: Eq"),
     Hash(bound = "T: Hash")
 )]
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
-    #[derivative(Hash(hash_with = "self::refcell_hash"))]
-    slot_states: RefCell<SlotStates>,
+    /// [`SlotState`] is shared by the arena and mutable iterators. Getting `&mut T` from `&T` is UB
+    /// if `T` is not `UnsafeCell`. Getting two `&mut T` at the same time is always UB.
+    #[derivative(
+        Hash(hash_with = "self::hash_unsafe_cell"),
+        PartialEq(compare_with = "self::cmp_unsafe_cell"),
+        Clone(clone_with = "self::clone_unsafe_cell")
+    )]
+    slot_states: UnsafeCell<SlotStates>,
     /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
     _distinct: PhantomData<fn() -> D>,
     // _distinct: PhantomData<*const D>,
 }
 
-fn refcell_hash<T: Hash, H: std::hash::Hasher>(x: &RefCell<T>, state: &mut H) {
-    // FIXME: unnecessary borrow
-    x.borrow().hash(state);
+fn hash_unsafe_cell<T: Hash, H: std::hash::Hasher>(x: &UnsafeCell<T>, state: &mut H) {
+    unsafe {
+        (*x.get()).hash(state);
+    }
+}
+
+fn clone_unsafe_cell<T: Clone>(x: &UnsafeCell<T>) -> UnsafeCell<T> {
+    unsafe { UnsafeCell::new((*x.get()).clone()) }
+}
+
+fn cmp_unsafe_cell<T: PartialEq>(x: &UnsafeCell<T>, other: &UnsafeCell<T>) -> bool {
+    // compare address
+    unsafe { &*x.get() == &*other.get() }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -94,7 +112,7 @@ API, so we added indirect bounds above
     Debug(bound = "T: Debug"),
     Clone(bound = "T: Clone"),
     PartialEq(bound = "T: PartialEq"),
-    Eq(bound = "T: PartialEq"),
+    Eq(bound = "T: Eq"),
     Hash(bound = "T: Hash")
 )]
 struct Entry<T, G: Gen = DefaultGen> {
@@ -279,7 +297,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
         Self {
             entries: data,
-            slot_states: RefCell::new(SlotStates {
+            slot_states: UnsafeCell::new(SlotStates {
                 free,
                 n_items: Default::default(),
             }),
@@ -296,8 +314,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Number of items in this arena
     pub fn len(&self) -> usize {
-        // FIXME: unnecessary borrow
-        let slot_states = self.slot_states.borrow();
+        let slot_states = unsafe { &*self.slot_states.get() };
         slot_states.n_items.raw as usize
     }
 
@@ -320,7 +337,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let gen = {
             debug_assert!(entry.data.is_none(), "free slot occupied?");
             entry.data = Some(data);
-            let mut slot_states = self.slot_states.borrow_mut();
+            let mut slot_states = self.slot_states.get_mut();
             slot_states.n_items.inc_mut();
             entry.gen.next()
         };
@@ -330,7 +347,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Removes all the items.
     pub fn clear(&mut self) {
-        let mut slot_states = self.slot_states.borrow_mut();
+        let mut slot_states = self.slot_states.get_mut();
         slot_states.free.clear();
         slot_states.n_items = Slot { raw: 0 };
     }
@@ -352,7 +369,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         } else {
             Some(self::remove_binded(
                 entry,
-                self.slot_states.borrow_mut().deref_mut(),
+                self.slot_states.get_mut().deref_mut(),
                 index,
             ))
         }
@@ -361,7 +378,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// Returns none if the generation matches. Returns some index on mismatch or no data
     pub fn invalidate(&mut self, index: Index<T, D, G>) -> Option<Index<T, D, G>> {
         let entry = &mut self.entries[index.slot.raw as usize];
-        self::invalidate(entry, self.slot_states.borrow_mut().deref_mut(), index)
+        self::invalidate(entry, self.slot_states.get_mut().deref_mut(), index)
     }
 
     pub fn replace(&mut self, index: Index<T, D, G>, new_data: T) -> Index<T, D, G> {
@@ -372,14 +389,14 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             self::replace_binded(
                 entry,
                 index.slot,
-                self.slot_states.borrow_mut().deref_mut(),
+                self.slot_states.get_mut().deref_mut(),
                 new_data,
             )
         }
     }
 
     fn next_free_slot(&mut self) -> Slot {
-        let mut slot_states = self.slot_states.borrow_mut();
+        let mut slot_states = self.slot_states.get_mut();
         if let Some(slot) = slot_states.free.pop() {
             slot
         } else if self.entries.len() < self.entries.capacity() {
@@ -413,7 +430,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
         // push in reverse (since the free stack is LIFO)
         for raw in (prev_cap as RawSlot..new_cap as RawSlot).rev() {
-            let mut slot_states = self.slot_states.borrow_mut();
+            let mut slot_states = self.slot_states.get_mut();
             slot_states.free.push(Slot { raw });
         }
     }
@@ -518,6 +535,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let x2 = self.get(ix2)?;
         Some(unsafe {
             (
+                // TODO: Avoid UB
                 &mut *(x1 as *const _ as *mut _),
                 &mut *(x2 as *const _ as *mut _),
             )
@@ -536,6 +554,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let x3 = self.get(ix3)?;
         Some(unsafe {
             (
+                // TODO: Avoid UB
                 &mut *(x1 as *const _ as *mut _),
                 &mut *(x2 as *const _ as *mut _),
                 &mut *(x3 as *const _ as *mut _),
@@ -569,10 +588,10 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         self.entries.get(slot.raw as usize)?.data.as_ref()
     }
 
-    /// Internal use only
-    pub(crate) fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
-        self.entries.get_mut(slot.raw as usize)?.data.as_mut()
-    }
+    // /// Internal use only
+    // pub(crate) fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
+    //     self.entries.get_mut(slot.raw as usize)?.data.as_mut()
+    // }
 
     /// Internal use only
     pub(crate) fn get2_mut_by_slot(&mut self, s1: Slot, s2: Slot) -> Option<(&mut T, &mut T)> {
@@ -594,7 +613,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn iter(&self) -> IndexedItemIter<T, D, G> {
         IndexedItemIter {
             entries: self.entries.iter().enumerate(),
-            n_items: self.slot_states.borrow().n_items.raw as usize,
+            n_items: unsafe { &*self.slot_states.get() }.n_items.raw as usize,
             n_visited: 0,
             _distinct: PhantomData,
         }
@@ -614,7 +633,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn items(&self) -> ItemIter<T, G> {
         ItemIter {
             entries: self.entries.iter(),
-            n_items: self.slot_states.borrow().n_items.raw as usize,
+            n_items: unsafe { &*self.slot_states.get() }.n_items.raw as usize,
             n_visited: 0,
         }
     }
