@@ -12,6 +12,9 @@ Unsafe goodies:
 * Borrow check per item, not per container ([`Arena::cell`]).
 * Mutable iterator ([`Arena::entries_mut`]), rather than raw slot iteration.
 
+Restrictions:
+* Single-threaded (since I have no experience on multi-threading)
+
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
 * [thunderdome](https://docs.rs/thunderdome/latest)
@@ -203,7 +206,7 @@ impl fmt::Display for Slot {
 }
 
 impl Slot {
-    const ZERO: Self = Self { raw: 0 };
+    pub const ZERO: Self = Self { raw: 0 };
 
     /// Creates slot from raw value
     /// # Safety
@@ -337,7 +340,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let gen = {
             debug_assert!(entry.data.is_none(), "free slot occupied?");
             entry.data = Some(data);
-            let mut slot_states = self.slot_states.get_mut();
+            let slot_states = self.slot_states.get_mut();
             slot_states.n_items.inc_mut();
             entry.gen.next()
         };
@@ -396,7 +399,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     fn next_free_slot(&mut self) -> Slot {
-        let mut slot_states = self.slot_states.get_mut();
+        let slot_states = self.slot_states.get_mut();
         if let Some(slot) = slot_states.free.pop() {
             slot
         } else if self.entries.len() < self.entries.capacity() {

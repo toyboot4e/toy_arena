@@ -1,3 +1,7 @@
+/*!
+Try `cargo miri test` and if it detects UB
+*/
+
 use super::*;
 use std::mem;
 
@@ -64,6 +68,26 @@ fn cell_panic() {
 
     // panic!
     let x1_2 = cell.get_mut(ix1);
+}
+
+#[test]
+fn entry_binds() {
+    let mut arena = Arena::<usize>::new();
+
+    let ix0 = arena.insert(0);
+    let ix1 = arena.insert(10);
+    let ix2 = arena.insert(100);
+
+    for (i, entry) in arena.bindings_mut().enumerate() {
+        if i == 1 {
+            continue;
+        }
+        entry.remove();
+    }
+
+    assert_eq!(arena.get(ix0), None);
+    assert_eq!(arena.get(ix1), Some(&10));
+    assert_eq!(arena.get(ix2), None);
 }
 
 #[test]

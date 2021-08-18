@@ -215,7 +215,7 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindings<'a, T, D, G> {
                 return Some(EntryBind {
                     entry,
                     // NOTE: This is why we need unsafe cell
-                    slot_states: self.slot_states,
+                    slot_states: self.slot_states.get_mut(),
                     index,
                 });
             }
@@ -233,7 +233,7 @@ impl<'a, T, D, G: Gen> Iterator for EntryBindings<'a, T, D, G> {
 /// Mutable access to an arena entry
 pub struct EntryBind<'a, T, D, G: Gen> {
     entry: &'a mut Entry<T, G>,
-    slot_states: &'a UnsafeCell<SlotStates>,
+    slot_states: *mut SlotStates,
     index: Index<T, D, G>,
 }
 
@@ -251,26 +251,18 @@ impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
     }
 
     pub fn invalidate(self) -> Option<Index<T, D, G>> {
-        crate::invalidate(
-            self.entry,
-            unsafe { &mut *self.slot_states.get() },
-            self.index,
-        )
+        crate::invalidate(self.entry, unsafe { &mut *self.slot_states }, self.index)
     }
 
     pub fn remove(self) -> T {
-        crate::remove_binded(
-            self.entry,
-            unsafe { &mut *self.slot_states.get() },
-            self.index,
-        )
+        crate::remove_binded(self.entry, unsafe { &mut *self.slot_states }, self.index)
     }
 
     pub fn replace(self, new: T) {
         crate::replace_binded::<T, D, G>(
             self.entry,
             self.index.slot,
-            unsafe { &mut *self.slot_states.get() },
+            unsafe { &mut *self.slot_states },
             new,
         );
     }
