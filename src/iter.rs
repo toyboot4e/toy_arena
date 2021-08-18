@@ -181,7 +181,6 @@ pub struct EntryBindings<'a, T, D, G: Gen> {
     entries: std::slice::IterMut<'a, Entry<T, G>>,
     slot_states: &'a mut UnsafeCell<SlotStates>,
     //
-    slot: Slot,
     n_items: usize,
     n_visited: usize,
     _distinct: PhantomData<fn() -> D>,
@@ -195,7 +194,6 @@ impl<'a, T, D, G: Gen> EntryBindings<'a, T, D, G> {
             entries: arena.entries.iter_mut(),
             slot_states: &mut arena.slot_states,
             //
-            slot: Slot::default(),
             n_items,
             n_visited: 0,
             _distinct: PhantomData,
