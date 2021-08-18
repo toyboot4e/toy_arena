@@ -46,19 +46,20 @@ impl<'a, T, D, G: Gen> Drop for Drain<'a, T, D, G> {
 }
 
 macro_rules! impl_item_iter {
-    ($name:ident) => {
+    ($name:ident, $borrow:ident) => {
         impl_item_iter!(
             $name,
+            $borrow,
             |me: &mut $name<'a, T, G>| me.entries.next(),
             |me: &mut $name<'a, T, G>| me.entries.next_back()
         );
     };
 
-    ($name:ident, $next:expr, $next_back:expr) => {
+    ($name:ident, $borrow:ident, $next:expr, $next_back:expr) => {
         impl<'a, T, G: Gen> Iterator for $name<'a, T, G> {
-            type Item = &'a T;
+            type Item = impl_item_iter!($borrow 'a T);
             fn next(&mut self) -> Option<Self::Item> {
-                impl_item_iter!(self, $next)
+                impl_item_iter!(self, $borrow, $next)
             }
 
             fn size_hint(&self) -> (usize, Option<usize>) {
@@ -69,7 +70,7 @@ macro_rules! impl_item_iter {
 
         impl<'a, T, G: Gen> DoubleEndedIterator for $name<'a, T, G> {
             fn next_back(&mut self) -> Option<Self::Item> {
-                impl_item_iter!(self, $next_back)
+                impl_item_iter!(self, $borrow, $next_back)
             }
         }
 
@@ -77,10 +78,17 @@ macro_rules! impl_item_iter {
         impl<'a, T, G: Gen> ExactSizeIterator for $name<'a, T, G> {}
     };
 
-    ($me:expr, $next:expr) => {{
+    (ref 'a T) => {
+        &'a T
+    };
+    (mut 'a T) => {
+        &'a mut T
+    };
+
+    ($me:expr, $borrow:ident, $next:expr) => {{
         while $me.n_visited < $me.n_items {
             let entry = ($next)($me)?;
-            if let Some(data) = &entry.data {
+            if let Some(data) = impl_item_iter!($borrow, entry.data) {
                 $me.n_visited += 1;
                 return Some(data);
             }
@@ -88,6 +96,14 @@ macro_rules! impl_item_iter {
 
         None
     }};
+
+    // &data or &mut data
+    (ref, $e:expr) => {
+        &$e
+    };
+    (mut, $e:expr) => {
+        &mut $e
+    };
 }
 
 /// [`Arena::items`] → `&T`
@@ -97,7 +113,7 @@ pub struct ItemIter<'a, T, G: Gen> {
     pub(crate) n_visited: usize,
 }
 
-impl_item_iter!(ItemIter);
+impl_item_iter!(ItemIter, ref);
 
 /// [`Arena::items_mut`] → `&mut T`
 pub struct ItemIterMut<'a, T, G: Gen> {
@@ -108,7 +124,7 @@ pub struct ItemIterMut<'a, T, G: Gen> {
     pub(crate) n_visited: usize,
 }
 
-impl_item_iter!(ItemIterMut);
+impl_item_iter!(ItemIterMut, mut);
 
 macro_rules! impl_indexed_iter {
     ($name:ident, $borrow:ident) => {
@@ -193,7 +209,7 @@ pub struct IndexedItemIterMut<'a, T, D, G: Gen> {
     pub(crate) _distinct: PhantomData<fn() -> D>,
 }
 
-impl_indexed_iter!(IndexedItemIterMut, ref);
+impl_indexed_iter!(IndexedItemIterMut, mut);
 
 macro_rules! impl_binds {
     ($name:ident) => {
