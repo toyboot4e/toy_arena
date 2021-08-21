@@ -1,19 +1,19 @@
 /*!
 Extensible generational arena for various uses. [`Example`](example)
 
-Goals: Tiny code and real use. Non-goals: Super fast performance.
+Goals: Tiny code and real use. Non-goals: Super fast performance and no UB.
 
 # Features
 Flexibilities:
 * Builtin support for distinct arena types (second type parameter of [`Arena<T, D, G>`]).
 * Customizable generation type (third type parameter of [`Arena<T, D, G>`]).
 
-Unsafe goodies:
-* Borrow check per item, not per container ([`Arena::cell`]).
-* Mutable iterator ([`Arena::entries_mut`]), rather than raw slot iteration.
+Unsafe goodies without UB:
+* Mutable iterator of entries ([`Arena::bindings`]), rather than slot/index-based iteration.
+* Virtual `Arena<RefCell<T>>` mode: ([`Arena::cell`]).
 
 Restrictions:
-* Single-threaded (since I have no experience on multi-threading)
+* Single-threaded
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -40,6 +40,7 @@ use std::{
     hash::Hash,
     iter::*,
     marker::PhantomData,
+    mem,
     num::*,
     ops::{self, DerefMut},
 };
@@ -69,8 +70,7 @@ original values (and see if the original value is still there or alreadly replac
 )]
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
-    /// [`SlotState`] is shared by the arena and mutable iterators. Getting `&mut T` from `&T` is UB
-    /// if `T` is not `UnsafeCell`. Getting two `&mut T` at the same time is always UB.
+    /// Can be shared by the arena and a mutable iterator
     #[derivative(
         Hash(hash_with = "self::hash_unsafe_cell"),
         PartialEq(compare_with = "self::cmp_unsafe_cell"),
@@ -124,19 +124,19 @@ struct Entry<T, G: Gen = DefaultGen> {
 }
 
 /**
-Mutable access to multiple items in [`Arena`] at the cost of runtime check. Note that the cell does
-**not track drops**, so you can't borrow an item once after you borrow it mutably.
-
-Virtually, `ArenaCell` casts `Arena<T>` to `Arena<RefCell<T>>`, with more restriction at runtime.
+Virtually it casts `Arena<T>` to `Arena<RefCell<T>>`. Unlike `RefCell`, it doesn't track drop, so
+you can't make two references to the same item at once.
 */
 #[derive(Derivative)]
-#[derivative(
-    Debug(bound = "T: Debug"),
-    PartialEq(bound = "T: PartialEq"),
-    Eq(bound = "T: Eq")
-)]
+#[derivative(Debug(bound = "T: Debug"))]
 pub struct ArenaCell<'a, T, D = (), G: Gen = DefaultGen> {
-    arena: &'a mut Arena<T, D, G>,
+    original: &'a mut Arena<T, D, G>,
+    /// Use `UnsafeCell` for preformance and avoiding lifetime error when getting references to the
+    /// items in it
+    /// # Safety
+    /// All the methods of [`ArenaCell`] are one-shot and we'll neve get two references to the
+    /// internal arena at runtime.
+    arena: UnsafeCell<Arena<T, D, G>>,
     log: RefCell<SmallVec<[(Slot, Borrow); 2]>>,
 }
 
@@ -530,7 +530,6 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         assert_ne!(ix1.slot(), ix2.slot());
         let x1 = self.get_mut(ix1)? as *mut _;
         let x2 = self.get_mut(ix2)?;
-        // TODO: avoid UB
         Some(unsafe { (&mut *(x1 as *const _ as *mut _), x2) })
     }
 
@@ -546,7 +545,6 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let x3 = self.get_mut(ix3)?;
         Some(unsafe {
             (
-                // TODO: avoid UB
                 &mut *(x1 as *const _ as *mut _),
                 &mut *(x2 as *const _ as *mut _),
                 x3,
@@ -554,7 +552,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         })
     }
 
-    /// Upgrades slot to `Index`. Prefer [`Arena::entries_mut`]
+    /// Upgrades slot to `Index`. Prefer [`Arena::bindings`] if you don't mind UB
     pub fn upgrade(&self, slot: Slot) -> Option<Index<T, D, G>> {
         // boundary check
         if slot.raw as usize >= self.entries.len() {
@@ -642,8 +640,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         }
     }
 
-    /// See [`EntryBindsMut`] and [`EntryBindMut`]
-    pub fn bindings_mut(&mut self) -> EntryBindings<T, D, G> {
+    /// See [`EntryBindings`] and [`EntryBind`]
+    pub fn bindings(&mut self) -> EntryBindings<T, D, G> {
         EntryBindings::new(self)
     }
 }
@@ -705,10 +703,22 @@ macro_rules! arena {
     }}
 }
 
+/// Give back the roginal arena
+impl<'a, T, D, G: Gen> Drop for ArenaCell<'a, T, D, G> {
+    fn drop(&mut self) {
+        mem::swap(self.original, self.arena.get_mut());
+    }
+}
+
 impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
-    fn new(arena: &'a mut Arena<T, D, G>) -> Self {
+    fn new(original: &'a mut Arena<T, D, G>) -> Self {
+        // take the ownership of the
+        let mut arena = Arena::new();
+        mem::swap(original, &mut arena);
+
         Self {
-            arena,
+            original,
+            arena: UnsafeCell::new(arena),
             log: Default::default(),
         }
     }
@@ -723,7 +733,8 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
 
     pub fn contains(&self, index: Index<T, D, G>) -> bool {
         assert!(self.state(index.slot) != Some(Borrow::Mutable));
-        self.arena.contains(index)
+        let arena = unsafe { &*self.arena.get() };
+        arena.contains(index)
     }
 
     pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
@@ -737,7 +748,8 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
             }
         }
 
-        self.arena.get(index)
+        let arena = unsafe { &*self.arena.get() };
+        arena.get(index)
     }
 
     pub fn get_mut(&self, index: Index<T, D, G>) -> Option<&mut T> {
@@ -753,8 +765,20 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
             }
         }
 
-        // `&T` -> `&mut T`
-        let ref_ = self.arena.get(index)?;
-        Some(unsafe { &mut *(ref_ as *const _ as *mut _) })
+        // `&mut T` -> `*mut T` -> `&mut T`
+        let arena = unsafe { &mut *self.arena.get() };
+        let ref_mut = arena.get_mut(index)?;
+        Some(unsafe { &mut *(ref_mut as *mut _) })
     }
 }
+
+// /// Shifts entries and removes empty slots. This operation will confuse existing indices.
+// pub unsafe fn remove_empty_slots<T, D, G: Gen>(arena: &mut Arena<T, D, G>) {
+//     todo!()
+// }
+//
+// /// Sets every entry's generation to the smallest value. This operation will confuse existing
+// /// indices.
+// pub unsafe fn init_generations<T, D, G: Gen>(arena: &mut Arena<T, D, G>) {
+//     todo!()
+// }

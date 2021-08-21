@@ -251,7 +251,7 @@ macro_rules! impl_binds {
     }};
 }
 
-/// [`Arena::entries_mut`] → mutable access to arena entries
+/// [`Arena::bindings`] → mutable access to arena entries
 pub struct EntryBindings<'a, T, D, G: Gen> {
     entries: Enumerate<std::slice::IterMut<'a, Entry<T, G>>>,
     slot_states: &'a mut UnsafeCell<SlotStates>,

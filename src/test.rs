@@ -23,6 +23,7 @@ fn size() {
     assert_eq!(mem::size_of::<Option<Slot>>(), 8);
 }
 
+/// `cargo +nightly miri test`
 #[test]
 fn cell() {
     let mut arena = Arena::<usize>::new();
@@ -78,7 +79,7 @@ fn entry_binds() {
     let ix1 = arena.insert(10);
     let ix2 = arena.insert(100);
 
-    for (i, entry) in arena.bindings_mut().enumerate() {
+    for (i, entry) in arena.bindings().enumerate() {
         if i == 1 {
             continue;
         }
@@ -189,7 +190,7 @@ fn entry_bind() {
     let mut arena = Arena::<i32>::from_iter(0..100);
     // simulate `drain_filter::<Vec<_>>()`
     let mut drain = Vec::new();
-    for entry in arena.bindings_mut() {
+    for entry in arena.bindings() {
         if entry.get() % 2 == 0 {
             let data = entry.remove();
             drain.push(data);
