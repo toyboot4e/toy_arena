@@ -1,8 +1,9 @@
 /*!
-Rooted tree of sibling/children-aware nodes
+Rooted tree layered on top of the generational arena
 */
 
 pub mod iter;
+pub mod iter_mut;
 
 #[cfg(test)]
 mod test;
@@ -116,6 +117,25 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn get_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T>> {
         self.nodes.get_mut(id)
     }
+
+    /// Removes subtree. Returns if the given node existed
+    pub fn remove(&mut self, id: NodeId<T, D, G>) -> bool {
+        let node = match self.nodes.get_mut(id) {
+            Some(node) => node,
+            None => return false,
+        };
+
+        // remove children first
+        for child in id.children_mut(self) {
+            //
+        }
+
+        // fn detach_rec<'a>(siblings: SiblingsNext<'a,T,D,G>) {
+        //     //
+        // }
+
+        true
+    }
 }
 
 /// Iterators
@@ -188,8 +208,8 @@ impl<T> Node<T> {
 
 /// Implementation for DRT node index
 impl<T, D, G: Gen> NodeId<T, D, G> {
-    /// Append child
-    pub fn append(self, tree: &mut Tree<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
+    /// Attach child
+    pub fn attach(self, tree: &mut Tree<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
         if !tree.contains(self) {
             return None;
         };
@@ -217,5 +237,18 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         }
 
         Some(child_id)
+    }
+
+    /// Detach child
+    pub fn detach(
+        self,
+        tree: &mut Tree<T, D, G>,
+        child: NodeId<T, D, G>,
+    ) -> Option<NodeId<T, D, G>> {
+        todo!()
+    }
+
+    pub fn children_mut(self, tree: &mut Tree<T, D, G>) -> iter_mut::SiblingsMutNext<T, D, G> {
+        todo!()
     }
 }

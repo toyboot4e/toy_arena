@@ -9,8 +9,8 @@ fn manual_traverse() {
     let mut tree = Tree::<&'static str>::default();
 
     let x = tree.insert("x");
-    let _x1 = x.append(&mut tree, "x1").unwrap();
-    let _x2 = x.append(&mut tree, "x2").unwrap();
+    let _x1 = x.attach(&mut tree, "x1").unwrap();
+    let _x2 = x.attach(&mut tree, "x2").unwrap();
 
     println!("{:#?}", tree);
 
@@ -28,8 +28,8 @@ fn automatic_traverse() {
     let mut tree = Tree::<&'static str>::default();
 
     let x = tree.insert("x");
-    let _x1 = x.append(&mut tree, "x1").unwrap();
-    let _x2 = x.append(&mut tree, "x2").unwrap();
+    let _x1 = x.attach(&mut tree, "x1").unwrap();
+    let _x2 = x.attach(&mut tree, "x2").unwrap();
 
     println!("{:#?}", tree);
 
