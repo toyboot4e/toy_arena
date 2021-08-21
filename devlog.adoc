@@ -4,6 +4,13 @@
 :indextree: https://docs.rs/indextree/latest/indextree/[indextree]
 :arena-cell: https://docs.rs/toy_arena/latest/toy_arena/struct.ArenaCell.html[ArenaCell]
 :tree: https://docs.rs/toy_arena/latest/toy_arena/tree/index.html[tree]
+:miri: https://github.com/rust-lang/miri[miri]
+:sb: https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md[Stacked Borrows]
+:aliasing: https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md
+:ucell: https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html[UnsafeCell]
+:no-2: https://github.com/toyboot4e/toy_arena/issues/2[#2]
+:no-4: https://github.com/toyboot4e/toy_arena/issues/4[#4]
+:no-4: https://github.com/toyboot4e/toy_arena/issues/5[#5]
 
 {toy-arena} is a generational arena for my game development.
 
@@ -14,7 +21,7 @@
 I published {toy-arena} on crates.io. Now it has different policies from {thunderdome}:
 +
 ** {arena-cell} type, where we get mutable access to multple items.
-** Slot-based operations are removed. Instead, `Arena::entries_mut` returns a mutable iterator where each entry can be, for example, `remove` ed.
+** Slot-based operations are removed. Instead, `Arena::entries_mut` returns a mutable binding iterator where each entry can be, for example, `remove` ed.
 +
 Both are unsafe, but I _think_ it doesn't break Rust's safety rule (practically there's no mutable alias, I think).
 
@@ -25,4 +32,14 @@ I changed all `PhantomData<T>` to `PhantomData<fn() -> T>`
 * Aug 15, 2021
 +
 I added WIP {tree} support, following the API of {indextree}.
+
+* Aug 21, 2021
++
+I wrote some `unsafe` in some projects and it worked, but it was not based on the fundamental knowledge: {aliasing} rules and {ucell}.
++
+Borrow checker can be deceieved with `unsafe` and pointer dereferencing, and it can work without any issue at runtime. _But_ breaking the borrow rules at runtime is considered to be *UB* because Rust does optimization based on the analyzed aliasing information. Some examples are `static mut` https://github.com/rust-lang/rust/issues/53639[hazards]. So I removed all the UBs.
++
+How do I know if I have UB? {miri} lets me know! It experimentally enforces {aliasing} rules based on {sb}. I tried ~10 examples and got familar with the concept in details (at least in {miri}'s model). Thank you {miri} people!
++
+I fixed all the errors {miri} detected. Fixing ideas can be found in {no-2}, {no-4} and {no-5}.
 
