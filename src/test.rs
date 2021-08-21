@@ -103,12 +103,12 @@ fn insert_remove_invalidate_replace() {
     assert_eq!(entities.capacity(), 2);
 
     let index0: Index<Entity> = entities.insert(Entity { hp: 0 });
-    assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
+    assert_eq!(index0.slot(), Slot::from_raw(0));
     assert_eq!(entities.len(), 1);
     assert_eq!(entities.capacity(), 2);
 
     let index1: Index<Entity> = entities.insert(Entity { hp: 1 });
-    assert_eq!(index1.slot(), unsafe { Slot::from_raw(1) });
+    assert_eq!(index1.slot(), Slot::from_raw(1));
     assert_eq!(entities.len(), 2);
 
     let removed_entity = entities.remove(index0);
@@ -117,27 +117,27 @@ fn insert_remove_invalidate_replace() {
 
     let index0: Index<Entity> = entities.insert(Entity { hp: 10 });
     assert_eq!(entities.len(), 2);
-    assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
+    assert_eq!(index0.slot(), Slot::from_raw(0));
 
     // extend
     let index2: Index<Entity> = entities.insert(Entity { hp: 2 });
-    assert_eq!(index2.slot(), unsafe { Slot::from_raw(2) });
+    assert_eq!(index2.slot(), Slot::from_raw(2));
     assert_eq!(entities.len(), 3);
     assert_eq!(entities.capacity(), 4);
 
     let index3: Index<Entity> = entities.insert(Entity { hp: 3 });
-    assert_eq!(index3.slot(), unsafe { Slot::from_raw(3) });
+    assert_eq!(index3.slot(), Slot::from_raw(3));
     assert_eq!(entities.len(), 4);
     assert_eq!(entities.capacity(), 4);
 
     // extend
     let index4: Index<Entity> = entities.insert(Entity { hp: 4 });
-    assert_eq!(index4.slot(), unsafe { Slot::from_raw(4) });
+    assert_eq!(index4.slot(), Slot::from_raw(4));
     assert_eq!(entities.len(), 5);
     assert_eq!(entities.capacity(), 8);
 
     let index4_2: Index<Entity> = entities.replace(index4, Entity { hp: 400 });
-    assert_eq!(index4_2.slot(), unsafe { Slot::from_raw(4) });
+    assert_eq!(index4_2.slot(), Slot::from_raw(4));
     assert_eq!(index4_2.gen(), NonZeroU32::new(3).unwrap());
     assert_eq!(entities.get(index4), None);
     assert_eq!(entities.remove(index4), None);

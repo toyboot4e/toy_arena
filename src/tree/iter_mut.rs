@@ -1,5 +1,5 @@
 /*!
-Mutable iterators for the [`Tree`]
+Iterators of mutable bindings of tree nodes
 */
 
 use std::{cell::UnsafeCell, mem, rc::Rc};
@@ -70,7 +70,7 @@ pub struct NodeMut<'a, T, D = (), G: Gen = DefaultGen> {
 impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     pub fn id(&self) -> NodeId<T, D, G> {
         let tree = self.bind.tree();
-        unsafe { tree.nodes.upgrade(self.slot).unwrap() }
+        tree.nodes.upgrade(self.slot).unwrap()
     }
 
     pub fn node(&self) -> &Node<T> {

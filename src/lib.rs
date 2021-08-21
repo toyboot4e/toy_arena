@@ -1,10 +1,11 @@
 /*!
 Extensible generational arena for various uses. [`Example`](example)
 
-Goals: Tiny code and real use. Non-goals: Super fast performance and no UB.
+Goals: Tiny code and real use. Non-goals: Super fast performance.
 
 # Features
 Flexibilities:
+* [`tree`] support.
 * Builtin support for distinct arena types (second type parameter of [`Arena<T, D, G>`]).
 * Customizable generation type (third type parameter of [`Arena<T, D, G>`]).
 
@@ -54,11 +55,11 @@ use crate::iter::*;
 pub type DefaultGen = NonZeroU32;
 
 /**
-Generational arena
+Generational arena: basically a [`Vec`], but with fixed item positions
 
-It's basically a [`Vec`], but with fixed item positions; arena operations don't move items. And
-more, each item in the arena is given "generation" value, where we can distinguish new values from
-original values (and see if the original value is still there or alreadly replaced).
+Arena operations don't move items. And more, each item in the arena is given "generation" value,
+where we can distinguish new values from old values (and see if a value is already replaced with new
+one).
 */
 #[derive(Derivative)]
 #[derivative(
@@ -124,8 +125,8 @@ struct Entry<T, G: Gen = DefaultGen> {
 }
 
 /**
-Virtually it casts `Arena<T>` to `Arena<RefCell<T>>`. Unlike `RefCell`, it doesn't track drop, so
-you can't make two references to the same item at once.
+Created with [`Arena::cell`]. Virtually `Arena<RefCell<T>>`, but not tracking drop (only one borrow
+per index is allowed)
 */
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
@@ -151,7 +152,7 @@ enum Borrow {
 
 Item in the [`Arena`] is located by [`Slot`] and identified by their generation. If the item at a
 slot is already replaced by another value, the generation of the entry is already incremented, so we
-can identify the original item from replaced item.
+can identify the original item from the old, replaced item.
 */
 #[derive(Derivative)]
 #[derivative(Copy, Debug, Clone, PartialEq, Eq, Hash)]
@@ -184,8 +185,9 @@ impl<T, D, G: Gen> Index<T, D, G> {
 type RawSlot = u32;
 
 /**
-Index of the backing `Vec` in [`Arena`]. Can be upgrade to [`Index`] by arena, but users are
-encouraged to perfer mutable iterators.
+Index of the backing `Vec` in [`Arena`]. Prefer mutable iterators to slot-based iteration
+
+[`Arena::upgrade`] takes slot and returns index.
 */
 #[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
@@ -209,10 +211,7 @@ impl Slot {
     pub const ZERO: Self = Self { raw: 0 };
 
     /// Creates slot from raw value
-    /// # Safety
-    /// if the raw slot is bigger than the length of the internal vec, use of the slot will cause
-    /// panic. This is because `toy_arena` assumes [`Index`] is only used for the belonging arena.
-    pub unsafe fn from_raw(raw: RawSlot) -> Self {
+    pub fn from_raw(raw: RawSlot) -> Self {
         Self { raw }
     }
 
@@ -554,7 +553,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Upgrades slot to `Index`. Prefer [`Arena::bindings`] if you don't mind UB
     pub fn upgrade(&self, slot: Slot) -> Option<Index<T, D, G>> {
-        // boundary check
+        // This is the only place where boundary check is performed!
         if slot.raw as usize >= self.entries.len() {
             return None;
         }
@@ -689,8 +688,7 @@ impl<T, D, G: Gen> FromIterator<T> for Arena<T, D, G> {
 }
 
 /**
-Creates an arena and inserts given values. Note that you might to have to annotate your `Arena<T>`
-when the type inference doesn't work well.
+Creates an arena and inserts given values. `Arena<T>` type might have to be annotated.
 */
 #[macro_export]
 macro_rules! arena {

@@ -236,7 +236,7 @@ macro_rules! impl_binds {
             let (slot, entry) = $next($me)?;
             if let Some(_data) = &mut entry.data {
                 $me.n_visited += 1;
-                let slot = unsafe { Slot::from_raw(slot as RawSlot) };
+                let slot = Slot::from_raw(slot as RawSlot);
                 let index = Index::new(slot, entry.gen.clone());
                 return Some(EntryBind {
                     entry,
