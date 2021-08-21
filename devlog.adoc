@@ -6,7 +6,7 @@
 :tree: https://docs.rs/toy_arena/latest/toy_arena/tree/index.html[tree]
 :miri: https://github.com/rust-lang/miri[miri]
 :sb: https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md[Stacked Borrows]
-:aliasing: https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md
+:aliasing: https://rust-lang.github.io/unsafe-code-guidelines/glossary.html#aliasing[aliasing]
 :ucell: https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html[UnsafeCell]
 :no-2: https://github.com/toyboot4e/toy_arena/issues/2[#2]
 :no-4: https://github.com/toyboot4e/toy_arena/issues/4[#4]
@@ -32,7 +32,7 @@ Edit: `&T` → `*mut T` → `&mut T` is *definitely UB*. Simple hazarding code:
 fn main() {
     let xs = &[0, 1, 2];
 
-    // never create `&mut T` like this, *directy or indirectly*:
+    // NEVER create `&mut T` like this, directy or indirectly:
     let x0 = &xs[0];
     let x0 = unsafe { &mut *(x0 as *const _ as *mut _) };
 
@@ -48,7 +48,7 @@ fn main() {
 
 * Aug 14, 2021
 +
-I changed all `PhantomData<T>` to `PhantomData<fn() -> T>`
+I changed all `PhantomData<T>` to `PhantomData<fn() -> T>`; see the table in the https://doc.rust-lang.org/nomicon/phantom-data.html[article] in rustonomion .
 
 * Aug 15, 2021
 +
