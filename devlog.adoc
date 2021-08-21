@@ -1,4 +1,4 @@
-= `toy_arena` devlog
+= `toy_arena`
 :toy-arena: https://docs.rs/toy_arena/latest/toy_arena/[toy_arena]
 :thunderdome: https://docs.rs/thunderdome/latest/thunderdome/[thunderdome]
 :indextree: https://docs.rs/indextree/latest/indextree/[indextree]
@@ -24,6 +24,27 @@ I published {toy-arena} on crates.io. Now it has different policies from {thunde
 ** Slot-based operations are removed. Instead, `Arena::entries_mut` returns a mutable binding iterator where each entry can be, for example, `remove` ed.
 +
 Both are unsafe, but I _think_ it doesn't break Rust's safety rule (practically there's no mutable alias, I think).
++
+Edit: `&T` → `*mut T` → `&mut T` is *definitely UB*. Simple hazarding code:
++
+[source,rust]
+----
+fn main() {
+    let xs = &[0, 1, 2];
+
+    // never create `&mut T` like this, *directy or indirectly*:
+    let x0 = &xs[0];
+    let x0 = unsafe { &mut *(x0 as *const _ as *mut _) };
+
+    let x1 = &xs[1];
+    let x1 = unsafe { &mut *(x1 as *const _ as *mut _) };
+
+    *x0 = 10;
+    *x1 = 20;
+
+    println!("{:?}", xs);
+}
+----
 
 * Aug 14, 2021
 +
