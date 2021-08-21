@@ -1,5 +1,5 @@
 /*!
-Example code for documentation
+Example code and documentation on safety
 
 # Distinct type parameter `D`
 
@@ -29,9 +29,10 @@ pub struct View {
 We don't need distinct type parameter in this example.. 😂 But if we have two arenas for the same
 type of items, we could distinguish [`Index`] by the belonging container type.
 
-# Arena cell
+# (UB) Arena cell
 
-When we want to mutably borrow multiple items in the arena, we can use [`ArenaCell`]:
+When we want to mutably borrow multiple items in the arena, we can use
+[`Arena::get2_mut`], [`Arena::get3_mut`] or maybe [`ArenaCell`]:
 
 ```
 use toy_arena::{Arena, Index};
@@ -63,6 +64,26 @@ drop(cell);
 assert_eq!(entities[e1], EntityModel { hp: 10 });
 assert_eq!(entities[e2], EntityModel { hp: 11 });
 ```
+
+They are UB, but they are better than index/slot-based access on user side.
+
+# Note on safety
+
+Some items in this crate are marked as `(UB)` ([undefined behavior]). It would be confirmed by
+[miri] if you run your code with them.
+
+[undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+[miri]: https://github.com/rust-lang/miri
+
+[From the reference]:
+
+> Breaking the pointer aliasing rules. &mut T and &T follow LLVM’s scoped noalias model, except if the &T contains an [`UnsafeCell<U>`].
+
+[`UnsafeCell`]: https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html
+[From the reference]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+
+UB in Rust is like "unspecified behacior", and it doesn't mean runtime UB, but that the possibilitiy
+is NOT zero.
 */
 
 // for linking types in the docstring:

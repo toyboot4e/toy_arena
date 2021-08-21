@@ -15,9 +15,9 @@ impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
     fn next(&mut self) -> Option<T> {
         while (self.slot.raw as usize) < self.arena.entries.len() {
             let slot = self.slot;
-            self.slot.inc();
+            self.slot.inc_mut();
 
-            let index = match self.arena.index_at(slot) {
+            let index = match self.arena.upgrade(slot) {
                 Some(i) => i,
                 None => continue,
             };
@@ -45,38 +45,81 @@ impl<'a, T, D, G: Gen> Drop for Drain<'a, T, D, G> {
     }
 }
 
-/// [`Arena::items`] → `&T`
-pub struct Items<'a, T, G: Gen> {
-    pub(crate) entries: std::slice::Iter<'a, Entry<T, G>>,
-    pub(crate) n_items: usize,
-    pub(crate) n_visited: usize,
+macro_rules! borrow {
+    // &'a T or &'a mut T
+    (ref 'a T) => {
+        &'a T
+    };
+    (mut 'a T) => {
+        &'a mut T
+    };
+
+    // &data or &mut data
+    (ref $e:expr) => {
+        &$e
+    };
+    (mut $e:expr) => {
+        &mut $e
+    };
 }
 
-impl<'a, T, G: Gen> Iterator for Items<'a, T, G> {
-    type Item = &'a T;
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.n_visited < self.n_items {
-            let entry = self.entries.next()?;
-            if let Some(data) = &entry.data {
-                self.n_visited += 1;
+macro_rules! impl_item_iter {
+    ($name:ident, $borrow:ident) => {
+        impl_item_iter!(
+            $name,
+            $borrow,
+            |me: &mut $name<'a, T, G>| me.entries.next(),
+            |me: &mut $name<'a, T, G>| me.entries.next_back()
+        );
+    };
+
+    ($name:ident, $borrow:ident, $next:expr, $next_back:expr) => {
+        impl<'a, T, G: Gen> Iterator for $name<'a, T, G> {
+            type Item = borrow!($borrow 'a T);
+            fn next(&mut self) -> Option<Self::Item> {
+                impl_item_iter!(self, $borrow, $next)
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let n = self.n_items - self.n_visited;
+                (n, Some(n))
+            }
+        }
+
+        impl<'a, T, G: Gen> DoubleEndedIterator for $name<'a, T, G> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                impl_item_iter!(self, $borrow, $next_back)
+            }
+        }
+
+        impl<'a, T, G: Gen> FusedIterator for $name<'a, T, G> {}
+        impl<'a, T, G: Gen> ExactSizeIterator for $name<'a, T, G> {}
+    };
+
+    ($me:expr, $borrow:ident, $next:expr) => {{
+        while $me.n_visited < $me.n_items {
+            let entry = ($next)($me)?;
+            if let Some(data) = borrow!($borrow entry.data) {
+                $me.n_visited += 1;
                 return Some(data);
             }
         }
 
         None
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = self.n_items - self.n_visited;
-        (n, Some(n))
-    }
+    }};
 }
 
-impl<'a, T, G: Gen> FusedIterator for Items<'a, T, G> {}
-impl<'a, T, G: Gen> ExactSizeIterator for Items<'a, T, G> {}
+/// [`Arena::items`] → `&T`
+pub struct ItemIter<'a, T, G: Gen> {
+    pub(crate) entries: std::slice::Iter<'a, Entry<T, G>>,
+    pub(crate) n_items: usize,
+    pub(crate) n_visited: usize,
+}
+
+impl_item_iter!(ItemIter, ref);
 
 /// [`Arena::items_mut`] → `&mut T`
-pub struct ItemsMut<'a, T, G: Gen> {
+pub struct ItemIterMut<'a, T, G: Gen> {
     pub(crate) entries: std::slice::IterMut<'a, Entry<T, G>>,
     /// Number of items in the arena
     pub(crate) n_items: usize,
@@ -84,172 +127,186 @@ pub struct ItemsMut<'a, T, G: Gen> {
     pub(crate) n_visited: usize,
 }
 
-impl<'a, T, G: Gen> Iterator for ItemsMut<'a, T, G> {
-    type Item = &'a mut T;
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.n_visited < self.n_items {
-            let entry = self.entries.next()?;
-            if let Some(data) = &mut entry.data {
-                self.n_visited += 1;
-                return Some(data);
+impl_item_iter!(ItemIterMut, mut);
+
+macro_rules! impl_indexed_iter {
+    ($name:ident, $borrow:ident) => {
+        impl_indexed_iter!(
+            $name,
+            $borrow,
+            |entry: &mut $name<'a, T, D, G>| entry.next(),
+            |entry: &mut $name<'a, T, D, G>| entry.next_back()
+        );
+    };
+
+    ($name:ident, $borrow:ident, $next:expr, $next_back:expr) => {
+        impl<'a, T, D, G: Gen> Iterator for $name<'a, T, D, G> {
+            type Item = (Index<T, D, G>, borrow!($borrow 'a T));
+            fn next(&mut self) -> Option<Self::Item> {
+                impl_indexed_iter!(self, $borrow, $next)
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let n = self.n_items - self.n_visited;
+                (n, Some(n))
             }
         }
-        None
-    }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let rest = self.n_items - self.n_visited;
-        (rest, Some(rest))
-    }
+        impl<'a, T, D, G: Gen> DoubleEndedIterator for $name<'a, T, D, G> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                impl_indexed_iter!(self, $borrow, $next_back)
+            }
+        }
+
+        impl<'a, T, D, G: Gen> FusedIterator for $name<'a, T, D, G> {}
+        impl<'a, T, D, G: Gen> ExactSizeIterator for $name<'a, T, D, G> {}
+    };
+
+    ($me:expr, $borrow:ident, $next:expr) => {{
+        while $me.n_visited < $me.n_items {
+            let (slot, entry) = $me.entries.next()?;
+            if let Some(data) = borrow!($borrow entry.data) {
+                $me.n_visited += 1;
+                let slot = Slot {
+                    raw: slot as RawSlot,
+                };
+                let index = Index::new(slot, entry.gen.clone());
+                return Some((index, data));
+            }
+        }
+
+        None
+    }};
 }
 
-impl<'a, T, G: Gen> FusedIterator for ItemsMut<'a, T, G> {}
-impl<'a, T, G: Gen> ExactSizeIterator for ItemsMut<'a, T, G> {}
-
 /// [`Arena::iter`] → `(Index, &T)`
-pub struct IndexedItems<'a, T, D, G: Gen> {
+pub struct IndexedItemIter<'a, T, D, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::Iter<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
     pub(crate) n_visited: usize,
-    pub(crate) _distinct: PhantomData<D>,
+    pub(crate) _distinct: PhantomData<fn() -> D>,
 }
 
-impl<'a, T, D, G: Gen> Iterator for IndexedItems<'a, T, D, G> {
-    type Item = (Index<T, D, G>, &'a T);
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.n_visited < self.n_items {
-            let (slot, entry) = self.entries.next()?;
-            if let Some(data) = &entry.data {
-                self.n_visited += 1;
-                let slot = Slot {
-                    raw: slot as RawSlot,
-                };
-                let index = Index::new(slot, entry.gen.clone());
-                return Some((index, data));
-            }
-        }
-
-        None
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = self.n_items - self.n_visited;
-        (n, Some(n))
-    }
-}
-
-impl<'a, T, D, G: Gen> FusedIterator for IndexedItems<'a, T, D, G> {}
-impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItems<'a, T, D, G> {}
+impl_indexed_iter!(IndexedItemIter, ref);
 
 /// [`Arena::iter_mut`] → `(Index, &mut T)`
-pub struct IndexedItemsMut<'a, T, D, G: Gen> {
+pub struct IndexedItemIterMut<'a, T, D, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::IterMut<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
     pub(crate) n_visited: usize,
-    pub(crate) _distinct: PhantomData<D>,
+    pub(crate) _distinct: PhantomData<fn() -> D>,
 }
 
-impl<'a, T, D, G: Gen> Iterator for IndexedItemsMut<'a, T, D, G> {
-    type Item = (Index<T, D, G>, &'a mut T);
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.n_visited < self.n_items {
-            let (slot, entry) = self.entries.next()?;
-            if let Some(data) = &mut entry.data {
-                self.n_visited += 1;
-                let slot = Slot {
-                    raw: slot as RawSlot,
-                };
-                let index = Index::new(slot, entry.gen.clone());
-                return Some((index, data));
+impl_indexed_iter!(IndexedItemIterMut, mut);
+
+macro_rules! impl_binds {
+    ($name:ident) => {
+        impl_binds!(
+            $name,
+            |me: &mut $name<'a, T, D, G>| me.entries.next(),
+            |me: &mut $name<'a, T, D, G>| me.entries.next_back()
+        );
+    };
+
+    ($name:ident, $next:expr, $next_back:expr) => {
+        impl<'a, T, D, G: Gen> Iterator for $name<'a, T, D, G> {
+            type Item = EntryBind<'a, T, D, G>;
+            fn next(&mut self) -> Option<Self::Item> {
+                impl_binds!(self, $next)
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let n = self.n_items - self.n_visited;
+                (n, Some(n))
             }
         }
 
-        None
-    }
+        impl<'a, T, D, G: Gen> DoubleEndedIterator for $name<'a, T, D, G> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                impl_binds!(self, $next_back)
+            }
+        }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let rest = self.n_items - self.n_visited;
-        (rest, Some(rest))
-    }
-}
+        impl<'a, T, D, G: Gen> FusedIterator for $name<'a, T, D, G> {}
+        impl<'a, T, D, G: Gen> ExactSizeIterator for $name<'a, T, D, G> {}
+    };
 
-impl<'a, T, D, G: Gen> FusedIterator for IndexedItemsMut<'a, T, D, G> {}
-impl<'a, T, D, G: Gen> ExactSizeIterator for IndexedItemsMut<'a, T, D, G> {}
-
-/// [`Arena::entries_mut`] → mutable access of arena entries (internally unsafe)
-pub struct EntryBindsMut<'a, T, D, G: Gen> {
-    // arena: &'a mut Arena<T, D, G>,
-    pub(crate) arena: &'a mut Arena<T, D, G>,
-    pub(crate) slot: Slot,
-    pub(crate) n_items: usize,
-    pub(crate) n_visited: usize,
-}
-
-impl<'a, T, D, G: Gen> Iterator for EntryBindsMut<'a, T, D, G> {
-    type Item = EntryBindMut<'a, T, D, G>;
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.n_visited < self.n_items {
-            let slot = self.slot;
-            self.slot.inc();
-
-            let entry = &mut self.arena.entries[slot.raw as usize];
+    ($me:expr, $next:expr) => {{
+        while $me.n_visited < $me.n_items {
+            let (slot, entry) = $next($me)?;
             if let Some(_data) = &mut entry.data {
-                self.n_visited += 1;
+                $me.n_visited += 1;
+                let slot = unsafe { Slot::from_raw(slot as RawSlot) };
                 let index = Index::new(slot, entry.gen.clone());
-                return Some(EntryBindMut {
-                    // UNSAFE: cannot infer lifetime
-                    arena: unsafe { &mut *(self.arena as *mut _) },
+                return Some(EntryBind {
+                    entry,
+                    // NOTE: This is why we need unsafe cell
+                    slot_states: $me.slot_states.get_mut(),
                     index,
                 });
             }
         }
 
         None
-    }
+    }};
+}
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let rest = self.n_items - self.n_visited;
-        (rest, Some(rest))
+/// [`Arena::bindings`] → mutable access to arena entries
+pub struct EntryBindings<'a, T, D, G: Gen> {
+    entries: Enumerate<std::slice::IterMut<'a, Entry<T, G>>>,
+    slot_states: &'a mut UnsafeCell<SlotStates>,
+    //
+    n_items: usize,
+    n_visited: usize,
+    _distinct: PhantomData<fn() -> D>,
+}
+
+impl<'a, T, D, G: Gen> EntryBindings<'a, T, D, G> {
+    pub(crate) fn new(arena: &'a mut Arena<T, D, G>) -> Self {
+        // safety: no mutable alias
+        let n_items = arena.slot_states.get_mut().n_items.into();
+        Self {
+            entries: arena.entries.iter_mut().enumerate(),
+            slot_states: &mut arena.slot_states,
+            //
+            n_items,
+            n_visited: 0,
+            _distinct: PhantomData,
+        }
     }
 }
 
-/// [`Arena::entries_mut`] → mutable access to an arena entry (internally unsafe)
-pub struct EntryBindMut<'a, T, D, G: Gen> {
-    arena: &'a mut Arena<T, D, G>,
-    /// We could use slot indstead of index, but then it misses generation test
+impl_binds!(EntryBindings);
+
+/// Mutable access to an arena entry
+pub struct EntryBind<'a, T, D, G: Gen> {
+    entry: &'a mut Entry<T, G>,
+    slot_states: *mut SlotStates,
     index: Index<T, D, G>,
 }
 
-impl<'a, T, D, G: Gen> EntryBindMut<'a, T, D, G>
-where
-    Index<T, D, G>: Copy,
-{
+impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
     pub fn get(&self) -> &T {
-        self.arena.get(self.index).unwrap()
+        self.entry.data.as_ref().unwrap()
     }
 
     pub fn get_mut(&mut self) -> &mut T {
-        self.arena.get_mut(self.index).unwrap()
+        self.entry.data.as_mut().unwrap()
     }
 
     pub fn index(&self) -> Index<T, D, G> {
         self.index
     }
 
-    pub fn invalidate(self) {
-        assert!(self.arena.invalidate(self.index).is_none());
+    pub fn invalidate(self) -> Option<Index<T, D, G>> {
+        crate::invalidate(self.entry, unsafe { &mut *self.slot_states }, self.index)
     }
 
     pub fn remove(self) -> T {
-        self.arena.remove(self.index).unwrap()
+        crate::remove_binded(self.entry, unsafe { &mut *self.slot_states }, self.index)
     }
 
-    pub fn replace(self, new: T) -> Self {
-        let index = self.arena.replace(self.index, new);
-        assert_eq!(self.index.slot, index.slot);
-        Self {
-            arena: self.arena,
-            index,
-        }
+    pub fn replace(self, new: T) {
+        crate::replace_binded::<T, D, G>(self.entry, self.index.slot, new);
     }
 }
