@@ -10,7 +10,7 @@
 :ucell: https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html[UnsafeCell]
 :no-2: https://github.com/toyboot4e/toy_arena/issues/2[#2]
 :no-4: https://github.com/toyboot4e/toy_arena/issues/4[#4]
-:no-4: https://github.com/toyboot4e/toy_arena/issues/5[#5]
+:no-5: https://github.com/toyboot4e/toy_arena/issues/5[#5]
 
 {toy-arena} is a generational arena for my game development.
 
