@@ -93,7 +93,7 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
 // --------------------------------------------------------------------------------
 // Automatic iterators
 
-/// Return value [`Traverse::next`]
+/// Return value of [`Traverse::next`]
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub enum TraverseItem<'a, T> {

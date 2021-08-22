@@ -478,6 +478,14 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             i += 1;
         }
     }
+
+    /// Sets every entry's generation to the smallest value. This operation will confuse existing
+    /// indices.
+    pub unsafe fn reset_generations(&mut self) {
+        for entry in &mut self.entries {
+            entry.gen = G::default_gen();
+        }
+    }
 }
 
 /// Borrows arena partially
@@ -808,14 +816,3 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
         Some(unsafe { &mut *(ref_mut as *mut _) })
     }
 }
-
-// /// Shifts entries and removes empty slots. This operation will confuse existing indices.
-// pub unsafe fn remove_empty_slots<T, D, G: Gen>(arena: &mut Arena<T, D, G>) {
-//     todo!()
-// }
-//
-// /// Sets every entry's generation to the smallest value. This operation will confuse existing
-// /// indices.
-// pub unsafe fn init_generations<T, D, G: Gen>(arena: &mut Arena<T, D, G>) {
-//     todo!()
-// }
