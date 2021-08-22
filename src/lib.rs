@@ -610,7 +610,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// See [`ArenaCell`] doc
     pub fn cell(&mut self) -> ArenaCell<T, D, G> {
-        ArenaCell::new(self)
+        ArenaCell::cast(self)
     }
 
     /// Internal use only
@@ -751,13 +751,14 @@ macro_rules! arena {
 /// Give back the roginal arena
 impl<'a, T, D, G: Gen> Drop for ArenaCell<'a, T, D, G> {
     fn drop(&mut self) {
+        // Return the `Arena` back to the original place
         mem::swap(self.original, self.arena.get_mut());
     }
 }
 
 impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
-    fn new(original: &'a mut Arena<T, D, G>) -> Self {
-        // take the ownership of the
+    fn cast(original: &'a mut Arena<T, D, G>) -> Self {
+        // Take the ownership of the `Arena`
         let mut arena = Arena::new();
         mem::swap(original, &mut arena);
 
@@ -812,7 +813,6 @@ impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
 
         // `&mut T` -> `*mut T` -> `&mut T`
         let arena = unsafe { &mut *self.arena.get() };
-        let ref_mut = arena.get_mut(index)?;
-        Some(unsafe { &mut *(ref_mut as *mut _) })
+        arena.get_mut(index)
     }
 }

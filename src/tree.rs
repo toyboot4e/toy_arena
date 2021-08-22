@@ -257,8 +257,8 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
     /// Detach child from the node
     pub fn detach(
         self,
-        tree: &mut Tree<T, D, G>,
-        child: NodeId<T, D, G>,
+        _tree: &mut Tree<T, D, G>,
+        _child: NodeId<T, D, G>,
     ) -> Option<NodeId<T, D, G>> {
         todo!()
     }

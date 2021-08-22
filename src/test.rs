@@ -25,32 +25,44 @@ fn size() {
 
 /// `cargo +nightly miri test`
 #[test]
-fn cell() {
+fn cell_get() {
     let mut arena = Arena::<usize>::new();
 
     let ix0 = arena.insert(0);
     let ix1 = arena.insert(10);
-    let ix2 = arena.insert(100);
-    let ix3 = arena.insert(1000);
+
+    {
+        let cell = arena.cell();
+
+        let x0 = cell.get(ix0).unwrap();
+        let x1 = cell.get(ix1).unwrap();
+        assert_eq!(x0, &0);
+        assert_eq!(x1, &10);
+    }
+
+    assert_eq!(arena.get(ix0), Some(&0));
+    assert_eq!(arena.get(ix1), Some(&10));
+}
+
+/// `cargo +nightly miri test`
+#[test]
+fn cell_get_mut() {
+    let mut arena = Arena::<usize>::new();
+
+    let ix0 = arena.insert(0);
+    let ix1 = arena.insert(10);
 
     {
         let cell = arena.cell();
 
         let x0 = cell.get_mut(ix0).unwrap();
         let x1 = cell.get_mut(ix1).unwrap();
-        let x2 = cell.get_mut(ix2).unwrap();
-        let x3 = cell.get_mut(ix3).unwrap();
-
         *x0 = 50;
         *x1 = 500;
-        *x2 = 5000;
-        *x3 = 50000;
     }
 
     assert_eq!(arena.get(ix0), Some(&50));
     assert_eq!(arena.get(ix1), Some(&500));
-    assert_eq!(arena.get(ix2), Some(&5000));
-    assert_eq!(arena.get(ix3), Some(&50000));
 }
 
 #[test]
@@ -63,9 +75,9 @@ fn cell_panic() {
     let ix2 = arena.insert(100);
 
     let cell = arena.cell();
-    let _x0 = cell.get_mut(ix0).unwrap();
-    let _x1 = cell.get_mut(ix1).unwrap();
-    let _x2 = cell.get_mut(ix2).unwrap();
+    let _x0 = cell.get(ix0).unwrap();
+    let _x1 = cell.get(ix1).unwrap();
+    let _x2 = cell.get(ix2).unwrap();
 
     // panic!
     let _x1_2 = cell.get_mut(ix1);
