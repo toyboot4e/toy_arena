@@ -26,7 +26,7 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
         self.tree.nodes.upgrade(self.slot).unwrap()
     }
 
-    pub fn node(&self) -> &'a Node<T> {
+    pub(crate) fn node(&self) -> &'a Node<T> {
         self.tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
@@ -77,7 +77,11 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
     type Item = NodeRef<'a, T, D, G>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.next?;
-        let next_node = self.tree.nodes.get_by_slot(next).unwrap();
+        let next_node = self
+            .tree
+            .nodes
+            .get_by_slot(next)
+            .expect("Internal error: invalid `next`");
         self.next = next_node.slink.next;
         Some(NodeRef {
             slot: next,

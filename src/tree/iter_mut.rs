@@ -21,6 +21,9 @@ impl<'a, T, D, G: Gen> Clone for TreeBind<'a, T, D, G> {
 
 struct TreeBindDrop<'a, T, D = (), G: Gen = DefaultGen> {
     original: &'a mut Tree<T, D, G>,
+    /// Here we're using `UnsafeCell` instead of `RefCell` so that we don't have to be bothered with
+    /// lifetime of `cell::{Ref, RefMut}`. How ever, it is our risk to not break the aliasing rules
+    /// at runtime.
     tree: UnsafeCell<Tree<T, D, G>>,
 }
 
@@ -62,47 +65,102 @@ impl<'a, T, D, G: Gen> TreeBind<'a, T, D, G> {
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct NodeMut<'a, T, D = (), G: Gen = DefaultGen> {
-    pub(crate) slot: Slot,
     #[derivative(Debug = "ignore")]
     pub(crate) bind: TreeBind<'a, T, D, G>,
+    pub(crate) slot: Slot,
 }
 
 impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
+    pub(crate) fn bind(tree: &'a mut Tree<T, D, G>, slot: Slot) -> Self {
+        Self {
+            bind: TreeBind::new(tree),
+            slot,
+        }
+    }
+
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
     pub fn id(&self) -> NodeId<T, D, G> {
         let tree = self.bind.tree();
         tree.nodes.upgrade(self.slot).unwrap()
     }
 
-    pub fn node(&self) -> &Node<T> {
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
+    fn node(&self) -> &Node<T> {
         let tree = self.bind.tree();
         tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
+    fn node_mut(&self) -> &mut Node<T> {
+        let tree = self.bind.tree_mut();
+        tree.nodes.get_mut_by_slot(self.slot).unwrap()
+    }
+
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
     pub fn data(&self) -> &T {
         self.node().data()
     }
 
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
+    pub fn data_mut(&mut self) -> &mut T {
+        self.node_mut().data_mut()
+    }
+
+    /// Removes subtree rooted by this node
+    pub fn remove(&mut self) {
+        let slink = self.node().slink.clone();
+        self.remove_rec();
+
+        // Fix the siblnig link
+        if let Some(prev) = slink.prev {
+            let prev = self.bind.tree_mut().nodes.get_mut_by_slot(prev).unwrap();
+            prev.slink.next = slink.next;
+        }
+        if let Some(next) = slink.next {
+            let next = self.bind.tree_mut().nodes.get_mut_by_slot(next).unwrap();
+            next.slink.prev = slink.prev;
+        }
+    }
+
+    fn remove_rec(&mut self) {
+        for mut child in self.children_mut() {
+            child.remove_rec();
+        }
+        // remove this node
+        self.bind.tree_mut().nodes.remove_by_slot(self.slot);
+    }
+}
+
+/// # ---- Mutable iterators ----
+impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
+    // TODO: add immutable iterators
+
     /// Nodes after this node
-    pub fn siblings(&self) -> SiblingsMutNext<'a, T, D, G> {
+    pub fn siblings_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
         SiblingsMutNext {
-            next: self.node().slink.next,
             bind: self.bind.clone(),
+            next: self.node().slink.next,
         }
     }
 
     /// This node and nodes after this node
-    pub fn preorder(&self) -> SiblingsMutNext<'a, T, D, G> {
+    pub fn preorder_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
         SiblingsMutNext {
-            next: Some(self.slot),
             bind: self.bind.clone(),
+            next: Some(self.slot),
         }
     }
 
-    pub fn children(&self) -> SiblingsMutNext<'a, T, D, G> {
+    /// Children of this node
+    pub fn children_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
         SiblingsMutNext {
-            next: self.node().clink.first,
-            // we know
             bind: self.bind.clone(),
+            next: self.node().clink.first,
         }
     }
 }
@@ -117,9 +175,9 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct SiblingsMutNext<'a, T, D = (), G: Gen = DefaultGen> {
-    pub(crate) next: Option<Slot>,
     #[derivative(Debug = "ignore")]
     pub(crate) bind: TreeBind<'a, T, D, G>,
+    pub(crate) next: Option<Slot>,
 }
 
 impl<'a, T, D, G: Gen> Iterator for SiblingsMutNext<'a, T, D, G> {

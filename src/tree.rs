@@ -93,8 +93,32 @@ impl<T, D, G: Gen> Tree<T, D, G> {
         self.nodes.contains(index)
     }
 
+    /// Number of items in this tree
     pub fn len(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// The capacity of the backgin vec
+    pub fn capacity(&self) -> usize {
+        self.nodes.capacity()
+    }
+
+    pub(crate) fn node(&self, id: NodeId<T, D, G>) -> Option<&Node<T>> {
+        self.nodes.get(id)
+    }
+
+    pub(crate) fn node_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T>> {
+        self.nodes.get_mut(id)
+    }
+
+    /// Reference of data in node
+    pub fn data(&self, id: NodeId<T, D, G>) -> Option<&T> {
+        self.nodes.get(id).map(Node::data)
+    }
+
+    /// Mutable reference of data in node
+    pub fn data_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut T> {
+        self.nodes.get_mut(id).map(Node::data_mut)
     }
 
     /// Appends a new data to the root node
@@ -110,31 +134,22 @@ impl<T, D, G: Gen> Tree<T, D, G> {
         id
     }
 
-    pub fn get(&self, id: NodeId<T, D, G>) -> Option<&Node<T>> {
-        self.nodes.get(id)
-    }
-
-    pub fn get_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T>> {
-        self.nodes.get_mut(id)
-    }
-
-    /// Removes subtree. Returns if the given node existed
     pub fn remove(&mut self, id: NodeId<T, D, G>) -> bool {
-        let node = match self.nodes.get_mut(id) {
-            Some(node) => node,
-            None => return false,
-        };
-
-        // remove children first
-        for child in id.children_mut(self) {
-            //
+        match self.bind(id) {
+            Some(mut bind) => {
+                bind.remove();
+                true
+            }
+            None => false,
         }
+    }
 
-        // fn detach_rec<'a>(siblings: SiblingsNext<'a,T,D,G>) {
-        //     //
-        // }
-
-        true
+    pub fn bind<'a>(&'a mut self, id: NodeId<T, D, G>) -> Option<iter_mut::NodeMut<'a, T, D, G>> {
+        if !self.nodes.contains(id) {
+            None
+        } else {
+            Some(iter_mut::NodeMut::bind(self, id.slot))
+        }
     }
 }
 
@@ -176,13 +191,13 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 impl<T, D, G: Gen> ops::Index<NodeId<T, D, G>> for Tree<T, D, G> {
     type Output = Node<T>;
     fn index(&self, id: NodeId<T, D, G>) -> &Self::Output {
-        self.get(id).unwrap()
+        self.node(id).unwrap()
     }
 }
 
 impl<T, D, G: Gen> ops::IndexMut<NodeId<T, D, G>> for Tree<T, D, G> {
     fn index_mut(&mut self, id: NodeId<T, D, G>) -> &mut Self::Output {
-        self.get_mut(id).unwrap()
+        self.node_mut(id).unwrap()
     }
 }
 
@@ -208,7 +223,7 @@ impl<T> Node<T> {
 
 /// Implementation for DRT node index
 impl<T, D, G: Gen> NodeId<T, D, G> {
-    /// Attach child
+    /// Attach child to the node
     pub fn attach(self, tree: &mut Tree<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
         if !tree.contains(self) {
             return None;
@@ -219,7 +234,7 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         let child_slot = child_id.slot();
 
         // connect the last child and the new child
-        let self_node = tree.get_mut(self).unwrap();
+        let self_node = tree.node_mut(self).unwrap();
         if let Some(last_slot) = self_node.clink.last {
             let (last_node, child_node) =
                 tree.nodes.get2_mut_by_slot(last_slot, child_slot).unwrap();
@@ -229,7 +244,7 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         }
 
         // append the new child
-        let self_node = tree.get_mut(self).unwrap();
+        let self_node = tree.node_mut(self).unwrap();
         self_node.clink.last = Some(child_slot);
 
         if self_node.clink.first.is_none() {
@@ -239,7 +254,7 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         Some(child_id)
     }
 
-    /// Detach child
+    /// Detach child from the node
     pub fn detach(
         self,
         tree: &mut Tree<T, D, G>,
@@ -248,7 +263,10 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         todo!()
     }
 
+    /// Returns iterator of child node bindings
     pub fn children_mut(self, tree: &mut Tree<T, D, G>) -> iter_mut::SiblingsMutNext<T, D, G> {
-        todo!()
+        let first = tree.node(self).and_then(|node| node.clink.first);
+        let bind = iter_mut::TreeBind::new(tree);
+        iter_mut::SiblingsMutNext { bind, next: first }
     }
 }

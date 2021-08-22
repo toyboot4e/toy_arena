@@ -340,13 +340,13 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         slot_states.n_items.raw as usize
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     /// Capacity of the backing vec
     pub fn capacity(&self) -> usize {
         self.entries.capacity()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -395,6 +395,16 @@ impl<T, D, G: Gen> Arena<T, D, G> {
                 index,
             ))
         }
+    }
+
+    pub(crate) fn remove_by_slot(&mut self, slot: Slot) -> Option<T> {
+        let index = self.upgrade(slot)?;
+        let entry = &mut self.entries[index.slot.raw as usize];
+        Some(self::remove_binded(
+            entry,
+            self.slot_states.get_mut().deref_mut(),
+            index,
+        ))
     }
 
     /// Returns none if the generation matches. Returns some index on mismatch or no data
@@ -515,7 +525,7 @@ pub(crate) fn replace_binded<T, D, G: Gen>(
 /// # ----- Accessors -----
 impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn contains(&self, index: Index<T, D, G>) -> bool {
-        self.get(index).is_some()
+        self.entries.get(index.slot.raw as usize).is_some()
     }
 
     pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {

@@ -289,10 +289,14 @@ pub struct EntryBind<'a, T, D, G: Gen> {
 }
 
 impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
     pub fn get(&self) -> &T {
         self.entry.data.as_ref().unwrap()
     }
 
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
     pub fn get_mut(&mut self) -> &mut T {
         self.entry.data.as_mut().unwrap()
     }
