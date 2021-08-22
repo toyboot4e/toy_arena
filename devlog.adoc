@@ -64,3 +64,9 @@ How do I know if I have UB? {miri} lets me know! It experimentally enforces {ali
 +
 I fixed all the errors {miri} detected. Fixing ideas can be found in {no-2}, {no-4} and {no-5}.
 
+* Aug 22, 2021
++
+I added node removal support for the tree module. It's almost ready!
++
+Reseting generations of arena entries does confuse existing entities. If I add *generation of tree*, the operation will be safe, but that would intern make our generation type fat.
+
