@@ -64,11 +64,11 @@ fn cell_panic() {
 
     let cell = arena.cell();
     let _x0 = cell.get_mut(ix0).unwrap();
-    let x1 = cell.get_mut(ix1).unwrap();
+    let _x1 = cell.get_mut(ix1).unwrap();
     let _x2 = cell.get_mut(ix2).unwrap();
 
     // panic!
-    let x1_2 = cell.get_mut(ix1);
+    let _x1_2 = cell.get_mut(ix1);
 }
 
 #[test]

@@ -145,7 +145,7 @@ impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
                     let node = self.tree.nodes.get_by_slot(child.slot).unwrap();
 
                     self.states.pop();
-                    self.maybe_push_siblings(&node);
+                    self.push_non_first_children(&node);
                     self.maybe_push_children(&node);
 
                     TraverseItem::Child(node)
@@ -196,13 +196,11 @@ impl<'a, T, D, G: Gen> Traverse<'a, T, D, G> {
         }
     }
 
-    fn maybe_push_siblings(&mut self, node: &Node<T>) {
-        if let Some(sibling) = node.slink.next.clone() {
-            let siblings = SiblingsNext {
-                next: Some(sibling),
-                tree: self.tree,
-            };
-            self.states.push(TraverseState::NonFirstChildren(siblings));
-        }
+    fn push_non_first_children(&mut self, node: &Node<T>) {
+        let siblings = SiblingsNext {
+            next: node.slink.next.clone(),
+            tree: self.tree,
+        };
+        self.states.push(TraverseState::NonFirstChildren(siblings));
     }
 }
