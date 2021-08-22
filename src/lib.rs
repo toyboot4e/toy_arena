@@ -1,26 +1,13 @@
 /*!
-Extensible generational arena for various uses. [`Example`](example)
+Extensible generational arena for various uses. [`Example`](_example)
 
 Goals: Tiny code and real use. Non-goals: Super fast performance.
-
-# Features
-Flexibilities:
-* [`tree`] support.
-* Builtin support for distinct arena types (second type parameter of [`Arena<T, D, G>`]).
-* Customizable generation type (third type parameter of [`Arena<T, D, G>`]).
-
-Unsafe goodies without UB:
-* Mutable iterator of entries ([`Arena::bindings`]), rather than slot/index-based iteration.
-* Virtual `Arena<RefCell<T>>` mode: ([`Arena::cell`]).
-
-Restrictions:
-* Single-threaded
 
 # Similar crates
 * [generational_arena](https://docs.rs/generational_arena/latest)
 * [thunderdome](https://docs.rs/thunderdome/latest)
 
-NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
+NOTE: Still early, bugs can exist!
 */
 
 // FIXME: don't use std::slice::IterMut
@@ -28,7 +15,7 @@ NOTE: While arena requires extream safety, `toy_arena` is NOT SO TESTED (yet).
 // use closures to implement `IntoIter`
 #![feature(type_alias_impl_trait)]
 
-pub mod example;
+pub mod _example;
 pub mod iter;
 pub mod tree;
 
@@ -58,8 +45,14 @@ pub type DefaultGen = NonZeroU32;
 Generational arena: basically a [`Vec`], but with fixed item positions
 
 Arena operations don't move items. And more, each item in the arena is given "generation" value,
-where we can distinguish new values from old values (and see if a value is already replaced with new
+where we can distinguish new values from old values (and see if a value is already replaced by new
 one).
+
+[`Arena`] accepts three type parameters. `T`: item type, `D`: distinct type parameter for making
+arena newtype, and `G` for the internal generation type. `D` and `G` have default types, so ordinary
+`Arena` can be written as `Arena<T>`.
+
+See also: [`crate::iter`].
 */
 #[derive(Derivative)]
 #[derivative(
@@ -125,8 +118,35 @@ struct Entry<T, G: Gen = DefaultGen> {
 }
 
 /**
-Created with [`Arena::cell`]. Virtually `Arena<RefCell<T>>`, but not tracking drop (only one borrow
-per index is allowed)
+[`Arena::cell`] → virtual `Arena<RefCell<T>>` mode, but not tracking drop
+
+# Example
+```
+use toy_arena::{Arena, Index};
+
+let mut data = Arena::<usize>::new();
+let v0 = data.insert(0);
+let v1 = data.insert(1);
+
+// arena cell, virtual `Arena<RefCell<T>>` mode
+let cell = data.cell();
+
+// first mutable borrow:
+let v0_mut = cell.get_mut(v0).unwrap();
+*v0_mut = 10;
+
+// second borrow of the same item will cause panic at runtime:
+// let v0_ref = cell.get(v0).unwrap();
+
+// second mutable borrow of another item is allowed:
+let v1_mut = cell.get_mut(v1).unwrap();
+*v1_mut = 11;
+
+drop(cell);
+
+assert_eq!(data[v0], 10);
+assert_eq!(data[v1], 11);
+```
 */
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
@@ -239,8 +259,8 @@ impl Slot {
 /**
 Generation type, one of the unsized `NonZero` types in [`std::num`]
 
-Generation of a first item of a slot is always `2` (since it's using `NonZero` type under the
-hood).
+Generation of a first item of a slot is always `1` (since it's using `NonZero` type and we'll
+always increase the generation on creating new value).
 */
 pub trait Gen: Debug + Clone + Copy + PartialEq + Eq + Hash + 'static {
     fn default_gen() -> Self;
@@ -330,7 +350,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 }
 
-/// # Mutation
+/// # ----- Mutations -----
 impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn insert(&mut self, data: T) -> Index<T, D, G> {
         let slot = self.next_free_slot();
@@ -492,7 +512,7 @@ pub(crate) fn replace_binded<T, D, G: Gen>(
     Index::<T, D, G>::new(slot, entry.gen)
 }
 
-/// # Accessors
+/// # ----- Accessors -----
 impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn contains(&self, index: Index<T, D, G>) -> bool {
         self.get(index).is_some()
@@ -521,6 +541,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             })
     }
 
+    /// # Safety
+    /// Panics if the two indices point the same slot.
     pub fn get2_mut(
         &mut self,
         ix1: Index<T, D, G>,
@@ -532,6 +554,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         Some(unsafe { (&mut *(x1 as *const _ as *mut _), x2) })
     }
 
+    /// # Safety
+    /// Panics if any two indices point to the same slot.
     pub fn get3_mut(
         &mut self,
         ix1: Index<T, D, G>,
@@ -551,9 +575,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         })
     }
 
-    /// Upgrades slot to `Index`. Prefer [`Arena::bindings`] if you don't mind UB
+    /// Upgrades slot to `Index`. Prefer [`Arena::bindings`] when possible
     pub fn upgrade(&self, slot: Slot) -> Option<Index<T, D, G>> {
-        // This is the only place where boundary check is performed!
         if slot.raw as usize >= self.entries.len() {
             return None;
         }
@@ -591,7 +614,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 }
 
-/// # Iterators
+/// # ----- Iterators -----
 impl<T, D, G: Gen> Arena<T, D, G> {
     /// `(Index, &T)`
     pub fn iter(&self) -> IndexedItemIter<T, D, G> {
@@ -689,6 +712,12 @@ impl<T, D, G: Gen> FromIterator<T> for Arena<T, D, G> {
 
 /**
 Creates an arena and inserts given values. `Arena<T>` type might have to be annotated.
+
+# Example
+```
+use toy_arena::{arena, Arena};
+let data: Arena<usize> = arena![0, 1, 2, 3, 4];
+```
 */
 #[macro_export]
 macro_rules! arena {
