@@ -10,8 +10,6 @@ Goals: Tiny code and real use. Non-goals: Super fast performance.
 NOTE: Still early, bugs can exist!
 */
 
-// FIXME: don't use std::slice::IterMut
-
 // use closures to implement `IntoIter`
 #![feature(type_alias_impl_trait)]
 
@@ -305,7 +303,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         let entry = &mut self.entries[slot.raw as usize];
 
         let gen = {
-            debug_assert!(entry.data.is_none(), "free slot occupied?");
+            debug_assert!(entry.data.is_none(), "bug: free slot occupied?");
             entry.data = Some(data);
             let slot_states = self.slot_states.get_mut();
             slot_states.n_items.inc_mut();
