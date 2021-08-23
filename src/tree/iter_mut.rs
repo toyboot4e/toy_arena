@@ -50,13 +50,13 @@ impl<'a, T, D, G: Gen> TreeBind<'a, T, D, G> {
 
     /// # Safety
     /// It's backed by `UnsafeCell`. Make sure to follow the aliasing rule at runtime!
-    pub fn tree(&self) -> &Tree<T, D, G> {
+    pub unsafe fn tree(&self) -> &Tree<T, D, G> {
         unsafe { &*self.inner.as_ref().tree.get() }
     }
 
     /// # Safety
     /// It's backed by `UnsafeCell`. Make sure to follow the aliasing rule at runtime!
-    pub fn tree_mut(&self) -> &mut Tree<T, D, G> {
+    pub unsafe fn tree_mut(&self) -> &mut Tree<T, D, G> {
         unsafe { &mut *self.inner.as_ref().tree.get() }
     }
 }
@@ -81,48 +81,66 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     /// # Safety
     /// Panics if the data is removed/invaldated.
     pub fn id(&self) -> NodeId<T, D, G> {
-        let tree = self.bind.tree();
+        let tree = unsafe { self.bind.tree() };
         tree.nodes.upgrade(self.slot).unwrap()
     }
 
     /// # Safety
     /// Panics if the data is removed/invaldated.
-    fn node(&self) -> &Node<T> {
-        let tree = self.bind.tree();
+    unsafe fn node(&self) -> &Node<T> {
+        let tree = unsafe { self.bind.tree() };
         tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
     /// # Safety
     /// Panics if the data is removed/invaldated.
-    fn node_mut(&self) -> &mut Node<T> {
-        let tree = self.bind.tree_mut();
+    unsafe fn node_mut(&self) -> &mut Node<T> {
+        let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.get_mut_by_slot(self.slot).unwrap()
     }
 
     /// # Safety
     /// Panics if the data is removed/invaldated.
     pub fn data(&self) -> &T {
-        self.node().data()
+        let tree = unsafe { self.bind.tree() };
+        tree.nodes.get_by_slot(self.slot).unwrap().data()
     }
 
     /// # Safety
     /// Panics if the data is removed/invaldated.
     pub fn data_mut(&mut self) -> &mut T {
-        self.node_mut().data_mut()
+        let tree = unsafe { self.bind.tree_mut() };
+        tree.nodes.get_mut_by_slot(self.slot).unwrap().data_mut()
     }
 
     /// Removes subtree rooted by this node
     pub fn remove(&mut self) {
-        let slink = self.node().slink.clone();
+        let node = unsafe { self.node() };
+        let slink = node.slink.clone();
+        let parent = node.parent.clone();
+        drop(node);
+
+        // parent
+        if let Some(parent) = parent {
+            let tree = unsafe { self.bind.tree_mut() };
+            let parent = tree.node_mut_by_slot(parent).unwrap();
+            let clink = parent.clink.clone();
+            drop(parent);
+            clink.remove(tree, self.slot);
+        }
+
+        // children
         self.remove_rec();
 
         // Fix the siblnig link
         if let Some(prev) = slink.prev {
-            let prev = self.bind.tree_mut().nodes.get_mut_by_slot(prev).unwrap();
+            let tree = unsafe { self.bind.tree_mut() };
+            let prev = tree.nodes.get_mut_by_slot(prev).unwrap();
             prev.slink.next = slink.next;
         }
         if let Some(next) = slink.next {
-            let next = self.bind.tree_mut().nodes.get_mut_by_slot(next).unwrap();
+            let tree = unsafe { self.bind.tree_mut() };
+            let next = tree.nodes.get_mut_by_slot(next).unwrap();
             next.slink.prev = slink.prev;
         }
     }
@@ -132,7 +150,8 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
             child.remove_rec();
         }
         // remove this node
-        self.bind.tree_mut().nodes.remove_by_slot(self.slot);
+        let tree = unsafe { self.bind.tree_mut() };
+        tree.nodes.remove_by_slot(self.slot);
     }
 }
 
@@ -144,7 +163,7 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     pub fn siblings_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
-            next: self.node().slink.next,
+            next: unsafe { self.node().slink.next },
         }
     }
 
@@ -160,7 +179,7 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     pub fn children_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
-            next: self.node().clink.first,
+            next: unsafe { self.node().clink.first },
         }
     }
 }
@@ -186,7 +205,7 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsMutNext<'a, T, D, G> {
         let next = self.next?;
 
         self.next = {
-            let tree = self.bind.tree();
+            let tree = unsafe { self.bind.tree() };
             let next_node = tree.nodes.get_by_slot(next).unwrap();
             next_node.slink.next
         };
