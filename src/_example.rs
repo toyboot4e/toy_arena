@@ -83,11 +83,6 @@ pub struct View {
 
 We don't need distinct type parameter in this example.. 😂 But if we have two arenas for the same
 type of items, we could distinguish item [`Index`] by the belonging container type.
-
-# Feature: Arena cell
-
-When we want to mutably borrow multiple items in an arena, we can use [`Arena::get2_mut`],
-[`Arena::get3_mut`] or maybe [`Arena::cell`] (see each doc for more information).
 */
 
 // for linking types in the docstring:

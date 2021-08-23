@@ -23,18 +23,16 @@ pub mod tree;
 mod test;
 
 use std::{
-    cell::{RefCell, UnsafeCell},
+    cell::UnsafeCell,
     fmt::{self, Debug},
     hash::Hash,
     iter::*,
     marker::PhantomData,
-    mem,
     num::*,
     ops::{self, DerefMut},
 };
 
 use derivative::Derivative;
-use smallvec::SmallVec;
 
 use crate::iter::*;
 
@@ -115,56 +113,6 @@ API, so we added indirect bounds above
 struct Entry<T, G: Gen = DefaultGen> {
     gen: G,
     data: Option<T>,
-}
-
-/**
-[`Arena::cell`] → virtual `Arena<RefCell<T>>` mode, but not tracking drop
-
-# Example
-```
-use toy_arena::{Arena, Index};
-
-let mut data = Arena::<usize>::new();
-let v0 = data.insert(0);
-let v1 = data.insert(1);
-
-// arena cell, virtual `Arena<RefCell<T>>` mode
-let cell = data.cell();
-
-// first mutable borrow:
-let v0_mut = cell.get_mut(v0).unwrap();
-*v0_mut = 10;
-
-// second borrow of the same item will cause panic at runtime:
-// let v0_ref = cell.get(v0).unwrap();
-
-// second mutable borrow of another item is allowed:
-let v1_mut = cell.get_mut(v1).unwrap();
-*v1_mut = 11;
-
-drop(cell);
-
-assert_eq!(data[v0], 10);
-assert_eq!(data[v1], 11);
-```
-*/
-#[derive(Derivative)]
-#[derivative(Debug(bound = "T: Debug"))]
-pub struct ArenaCell<'a, T, D = (), G: Gen = DefaultGen> {
-    original: &'a mut Arena<T, D, G>,
-    /// Use `UnsafeCell` for preformance and avoiding lifetime error when getting references to the
-    /// items in it
-    /// # Safety
-    /// All the methods of [`ArenaCell`] are one-shot and we'll neve get two references to the
-    /// internal arena at runtime.
-    arena: UnsafeCell<Arena<T, D, G>>,
-    log: RefCell<SmallVec<[(Slot, Borrow); 2]>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Borrow {
-    Mutable,
-    Immutable,
 }
 
 /**
@@ -608,11 +556,6 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         })
     }
 
-    /// See [`ArenaCell`] doc
-    pub fn cell(&mut self) -> ArenaCell<T, D, G> {
-        ArenaCell::cast(self)
-    }
-
     /// Internal use only
     pub(crate) fn get_by_slot(&self, slot: Slot) -> Option<&T> {
         self.entries.get(slot.raw as usize)?.data.as_ref()
@@ -746,73 +689,4 @@ macro_rules! arena {
         )*
         arena
     }}
-}
-
-/// Give back the roginal arena
-impl<'a, T, D, G: Gen> Drop for ArenaCell<'a, T, D, G> {
-    fn drop(&mut self) {
-        // Return the `Arena` back to the original place
-        mem::swap(self.original, self.arena.get_mut());
-    }
-}
-
-impl<'a, T, D, G: Gen> ArenaCell<'a, T, D, G> {
-    fn cast(original: &'a mut Arena<T, D, G>) -> Self {
-        // Take the ownership of the `Arena`
-        let mut arena = Arena::new();
-        mem::swap(original, &mut arena);
-
-        Self {
-            original,
-            arena: UnsafeCell::new(arena),
-            log: Default::default(),
-        }
-    }
-
-    fn state(&self, slot: Slot) -> Option<Borrow> {
-        self.log
-            .borrow()
-            .iter()
-            .find(|(s, _b)| *s == slot)
-            .map(|(_s, b)| *b)
-    }
-
-    pub fn contains(&self, index: Index<T, D, G>) -> bool {
-        assert!(self.state(index.slot) != Some(Borrow::Mutable));
-        let arena = unsafe { &*self.arena.get() };
-        arena.contains(index)
-    }
-
-    pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
-        let slot = index.slot;
-
-        match self.state(slot) {
-            None => self.log.borrow_mut().push((slot, Borrow::Immutable)),
-            Some(Borrow::Immutable) => {}
-            Some(Borrow::Mutable) => {
-                panic!("Already borrowed (mutably)");
-            }
-        }
-
-        let arena = unsafe { &*self.arena.get() };
-        arena.get(index)
-    }
-
-    pub fn get_mut(&self, index: Index<T, D, G>) -> Option<&mut T> {
-        let slot = index.slot;
-
-        match self.state(slot) {
-            None => self.log.borrow_mut().push((slot, Borrow::Mutable)),
-            Some(Borrow::Immutable) => {
-                panic!("Already borrowed (immutably)");
-            }
-            Some(Borrow::Mutable) => {
-                panic!("Already borrowed (mutably)");
-            }
-        }
-
-        // `&mut T` -> `*mut T` -> `&mut T`
-        let arena = unsafe { &mut *self.arena.get() };
-        arena.get_mut(index)
-    }
 }
