@@ -212,10 +212,9 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 impl<T, D, G: Gen> Tree<T, D, G> {
     /// Depth-first search
     pub fn traverse(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
-        let states = vec![iter::TraverseState::Parent(iter::NodeRef {
-            slot: id.slot,
-            tree: self,
-        })];
+        let states = vec![iter::TraverseState::Parent(iter::NodeRef::new(
+            id.slot, self,
+        ))];
         iter::Traverse { tree: self, states }
     }
 
