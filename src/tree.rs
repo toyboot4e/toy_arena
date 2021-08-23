@@ -1,6 +1,13 @@
 /*!
 Rooted tree layered on top of the generational arena
+
+# Similar crates
+* [indextree](https://docs.rs/indextree/latest/indextree/)
+* [ego_tree](https://docs.rs/ego-tree/latest/ego_tree/)
 */
+
+// TODO: share arena/tree iter impls
+// TODO: extract link operations from iter impls
 
 pub mod iter;
 pub mod iter_mut;
@@ -16,9 +23,7 @@ use derivative::Derivative;
 
 use crate::{DefaultGen, Gen, Slot};
 
-/**
-[`Index`](crate::Index) of node in [`Tree`]
-*/
+/// Tree node index with parenting API
 pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T>, D, G>;
 
 type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
@@ -41,7 +46,7 @@ pub struct Tree<T, D = (), G: Gen = DefaultGen> {
     root: ChildLink,
 }
 
-/// Tree node
+/// Opaque tree node index
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -207,8 +212,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 }
 
-/// Iterators
-/// ---
+/// # Mutable iterators
 impl<T, D, G: Gen> Tree<T, D, G> {
     /// Depth-first search
     pub fn traverse(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
@@ -238,6 +242,16 @@ impl<T, D, G: Gen> Tree<T, D, G> {
             ))
         };
         iter::Traverse { tree: self, states }
+    }
+}
+
+/// # Mutable binding iterators
+impl<T, D, G: Gen> Tree<T, D, G> {
+    /// Returns iterator of child node bindings
+    pub fn children_mut(&mut self, id: NodeId<T, D, G>) -> iter_mut::SiblingsMutNext<T, D, G> {
+        let first = self.node(id).and_then(|node| node.clink.first);
+        let bind = iter_mut::TreeBind::new(self);
+        iter_mut::SiblingsMutNext { bind, next: first }
     }
 }
 
@@ -277,7 +291,7 @@ impl<T> Node<T> {
 
 /// Implementation for DRT node index
 impl<T, D, G: Gen> NodeId<T, D, G> {
-    /// Attach child to the node
+    /// Attaches child to the node
     pub fn attach(self, tree: &mut Tree<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
         if !tree.contains(self) {
             return None;
@@ -310,21 +324,23 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         Some(child_id)
     }
 
-    // /// Detach child from the node
-    // pub fn detach(
-    //     self,
-    //     tree: &mut Tree<T, D, G>,
-    //     child: NodeId<T, D, G>,
-    // ) -> Option<NodeId<T, D, G>> {
-    //     let child = tree.node(child)?;
+    /// Detaches the child of the node
+    pub fn detach(
+        self,
+        tree: &mut Tree<T, D, G>,
+        child: NodeId<T, D, G>,
+    ) -> Option<NodeId<T, D, G>> {
+        let child = tree.node(child)?;
+        todo!()
+    }
 
-    //     Some(child)
-    // }
-
-    /// Returns iterator of child node bindings
-    pub fn children_mut(self, tree: &mut Tree<T, D, G>) -> iter_mut::SiblingsMutNext<T, D, G> {
-        let first = tree.node(self).and_then(|node| node.clink.first);
-        let bind = iter_mut::TreeBind::new(tree);
-        iter_mut::SiblingsMutNext { bind, next: first }
+    /// Invalidates the child of the node. This is cheaper than [`detach`](Self::detach).
+    pub fn invalidate(
+        self,
+        tree: &mut Tree<T, D, G>,
+        child: NodeId<T, D, G>,
+    ) -> Option<NodeId<T, D, G>> {
+        let child = tree.node(child)?;
+        todo!()
     }
 }

@@ -114,11 +114,25 @@ struct Entry<T, G: Gen = DefaultGen> {
 }
 
 /**
-[`Slot`] + [`Gen`]. Takes 8 bytes for [`DefaultGen`]
+Slot with identitiy based on generation.
 
 Item in the [`Arena`] is located by [`Slot`] and identified by their generation. If the item at a
 slot is already replaced by another value, the generation of the entry is already incremented, so we
 can identify the original item from the old, replaced item.
+
+# Memory use
+```
+use std::mem;
+use toy_arena::Index;
+assert_eq!(
+    mem::size_of::<Index<()>>(),
+    mem::size_of::<u64>(),
+);
+assert_eq!(
+    mem::size_of::<Option<Index<()>>>(),
+    mem::size_of::<u64>(),
+);
+```
 */
 #[derive(Derivative)]
 #[derivative(Copy, Debug, Clone, PartialEq, Eq, Hash)]
@@ -151,9 +165,9 @@ impl<T, D, G: Gen> Index<T, D, G> {
 type RawSlot = u32;
 
 /**
-Index of the backing `Vec` in [`Arena`]. Prefer mutable iterators to slot-based iteration
+Index of the backing `Vec` in [`Arena`]. It can be [upgraded](`Arena::upgrade`) to [`Index`], but
+prefer mutable iterators to slot-based iteration.
 
-[`Arena::upgrade`] takes slot and returns index.
 */
 #[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(transparent)]

@@ -3,25 +3,6 @@ Try `cargo miri test` and if it detects UB
 */
 
 use super::*;
-use std::mem;
-
-#[test]
-fn size() {
-    // `Index` is 8 bytes long by default
-    assert_eq!(mem::size_of::<Index<()>>(), mem::size_of::<u32>() * 2);
-
-    // the nonzero type reduces the optional index size
-    assert_eq!(
-        mem::size_of::<Option<Index<()>>>(),
-        mem::size_of::<Index<()>>()
-    );
-
-    // unfortunatelly, entry is a bit too long with occupied tag
-    assert_eq!(mem::size_of::<Entry<u32>>(), 12);
-
-    // TODO: maybe use nonmax slot?
-    assert_eq!(mem::size_of::<Option<Slot>>(), 8);
-}
 
 #[test]
 fn entry_binds() {

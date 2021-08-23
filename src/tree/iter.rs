@@ -1,5 +1,5 @@
 /*!
-Iterator types for the [`Tree`]
+Iterators of immutable bindings of tree nodes
 */
 
 // TODO: impl double-ended iterator
