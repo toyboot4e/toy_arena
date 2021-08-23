@@ -123,9 +123,10 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         // parent
         if let Some(parent) = parent {
             let tree = unsafe { self.bind.tree_mut() };
-            let parent = tree.node_mut_by_slot(parent).unwrap();
-            let clink = parent.clink.clone();
-            drop(parent);
+            let clink = {
+                let parent = tree.node_mut_by_slot(parent).unwrap();
+                parent.clink.clone()
+            };
             clink.remove(tree, self.slot);
         }
 
@@ -207,6 +208,7 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsMutNext<'a, T, D, G> {
         self.next = {
             let tree = unsafe { self.bind.tree() };
             let next_node = tree.nodes.get_by_slot(next).unwrap();
+            debug_assert_ne!(self.next, next_node.slink.next);
             next_node.slink.next
         };
 

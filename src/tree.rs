@@ -287,9 +287,9 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         let child_id = tree.nodes.insert(child_node);
         let child_slot = child_id.slot();
 
-        // connect the last child and the new child
+        // siblngs link
         let self_node = tree.node_mut(self).unwrap();
-        if let Some(last_slot) = self_node.clink.last {
+        if let Some(last_slot) = self_node.clink.last.or(self_node.clink.first) {
             let (last_node, child_node) =
                 tree.nodes.get2_mut_by_slot(last_slot, child_slot).unwrap();
             debug_assert!(last_node.slink.next.is_none());
@@ -297,12 +297,14 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
             child_node.slink.prev = Some(last_slot);
         }
 
-        // append the new child
+        // parent -> child link
         let self_node = tree.node_mut(self).unwrap();
-        self_node.clink.last = Some(child_slot);
 
         if self_node.clink.first.is_none() {
-            self_node.clink.first = self_node.clink.last;
+            debug_assert!(self_node.clink.last.is_none());
+            self_node.clink.first = Some(child_slot);
+        } else {
+            self_node.clink.last = Some(child_slot);
         }
 
         Some(child_id)
