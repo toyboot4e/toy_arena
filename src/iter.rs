@@ -2,7 +2,7 @@
 Iterator types for [`Arena`]
 
 [`EntryBindings`] is a special one, where we can `remove`, `invaliate` or `replace` the binded
-entry.
+entries.
 */
 
 use crate::*;

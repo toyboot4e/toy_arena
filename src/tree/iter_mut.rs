@@ -61,7 +61,7 @@ impl<'a, T, D, G: Gen> TreeBind<'a, T, D, G> {
     }
 }
 
-/// Reference to a node and their children
+/// Binding of an existing node and their children
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct NodeMut<'a, T, D = (), G: Gen = DefaultGen> {
@@ -121,11 +121,13 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         drop(node);
 
         // parent
-        if let Some(parent) = parent {
+        {
             let tree = unsafe { self.bind.tree_mut() };
-            let clink = {
+            let clink = if let Some(parent) = parent {
                 let parent = tree.node_mut_by_slot(parent).unwrap();
                 parent.clink.clone()
+            } else {
+                tree.root.clone()
             };
             clink.remove(tree, self.slot);
         }

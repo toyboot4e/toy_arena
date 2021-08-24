@@ -12,6 +12,10 @@ Rooted tree layered on top of the generational arena
 pub mod iter;
 pub mod iter_mut;
 
+// just for doc link
+#[allow(unused)]
+use crate::Index;
+
 #[cfg(test)]
 mod test;
 
@@ -32,6 +36,11 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 
 /**
 Non-rooted tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting methods.
+
+# Implmentation note
+
+[`Tree`] doesn't have root node and the API is a bit similar to [`Arena`](crate::Arena). But wo
+could use an explicit root node, where `parent` of `Node` is always there (if it's not the root node).
 */
 #[derive(Derivative)]
 #[derivative(

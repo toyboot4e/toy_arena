@@ -32,7 +32,7 @@ macro_rules! validate_slot {
     ($tree:expr, $slot:expr) => {};
 }
 
-/// Reference to an existing node and their children
+/// Binding of existing node and their children
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct NodeRef<'a, T, D = (), G: Gen = DefaultGen> {
