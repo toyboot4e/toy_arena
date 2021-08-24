@@ -43,7 +43,7 @@ I fixed some of the errors {miri} detected. Fixing ideas can be found in {no-4} 
 +
 I added node removal support for the tree module. It's almost ready!
 +
-Reseting generations of arena entries does confuse existing entities. If I add *generation of tree*, the operation will be safe, but that would in tern make our generation type fat.
+Resetting generations of arena entries does confuse existing entities. If I add *generation of tree*, the operation will be safe, but that would in tern make our generation type fat.
 
 * Aug 23, 2021
 +
@@ -59,7 +59,9 @@ It exposes an explicit root node and makes use of object-oriented API where the 
 
 ** {indextree} route
 +
-It puts most of sibeasling/children linkinig APIs in `NodeId`. `parent.append(child, &mut arena)` reads well to me.
+It puts most of siblings/children linkinig APIs in `NodeId`. `parent.append(child, &mut arena)` reads well to me.
 +
-I'll follow {indextree} so that `toy_arena::tree` gets a bit similar to the arena API. Also, I don't want an explicit root node as a user actually.
+I'll follow {indextree} so that `toy_arena::tree` is a bit similar to the arena's API. Also, I don't want an explicit root node as a user actually.
+
+I also tried adding GitHub actions. Does `cargo +nightly miri test` run?
 

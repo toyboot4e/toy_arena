@@ -11,7 +11,6 @@ NOTE: Still early, bugs can exist!
 */
 
 // use closures to implement `IntoIter`
-#![feature(type_alias_impl_trait)]
 
 pub mod _example;
 pub mod iter;
