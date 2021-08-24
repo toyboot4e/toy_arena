@@ -2,7 +2,6 @@
 :toy-arena: https://docs.rs/toy_arena/latest/toy_arena/[toy_arena]
 :thunderdome: https://docs.rs/thunderdome/latest/thunderdome/[thunderdome]
 :indextree: https://docs.rs/indextree/latest/indextree/[indextree]
-:arena-cell: https://docs.rs/toy_arena/latest/toy_arena/struct.ArenaCell.html[ArenaCell]
 :tree: https://docs.rs/toy_arena/latest/toy_arena/tree/index.html[tree]
 :miri: https://github.com/rust-lang/miri[miri]
 :sb: https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md[Stacked Borrows]
@@ -11,6 +10,8 @@
 :no-2: https://github.com/toyboot4e/toy_arena/issues/2[#2]
 :no-4: https://github.com/toyboot4e/toy_arena/issues/4[#4]
 :no-5: https://github.com/toyboot4e/toy_arena/issues/5[#5]
+:ego-tree: https://docs.rs/ego-tree/latest/ego_tree/[ego_tree]
+:indextere: https://docs.rs/indextree/latest/indextree/[indextree]
 
 {toy-arena} is a generational arena for my game development.
 
@@ -18,33 +19,7 @@
 
 * Aug 13, 2021
 +
-I published {toy-arena} on crates.io. Now it has different policies from {thunderdome}:
-+
-** {arena-cell} type, where we get mutable access to multple items.
-** Slot-based operations are removed. Instead, `Arena::entries_mut` returns a mutable binding iterator where each entry can be, for example, `remove` ed.
-+
-Both are unsafe, but I _think_ it doesn't break Rust's safety rule (practically there's no mutable alias, I think).
-+
-Edit: `&T` → `*mut T` → `&mut T` is *definitely UB*. Simple hazarding code:
-+
-[source,rust]
-----
-fn main() {
-    let xs = &[0, 1, 2];
-
-    // NEVER create `&mut T` like this, directy or indirectly:
-    let x0 = &xs[0];
-    let x0 = unsafe { &mut *(x0 as *const _ as *mut _) };
-
-    let x1 = &xs[1];
-    let x1 = unsafe { &mut *(x1 as *const _ as *mut _) };
-
-    *x0 = 10;
-    *x1 = 20;
-
-    println!("{:?}", xs);
-}
-----
+I published {toy-arena} on crates.io. It is going to make uses of mutable iterators rather than forcing users to do manual, slot/index-based iteration.
 
 * Aug 14, 2021
 +
@@ -62,5 +37,29 @@ Borrow checker can be deceieved with `unsafe` and pointer dereferencing, and it 
 +
 How do I know if I have UB? {miri} lets me know! It experimentally enforces {aliasing} rules based on {sb}. I tried ~10 examples and got familar with the concept in details (at least in {miri}'s model). Thank you {miri} people!
 +
-I fixed all the errors {miri} detected. Fixing ideas can be found in {no-2}, {no-4} and {no-5}.
+I fixed some of the errors {miri} detected. Fixing ideas can be found in {no-4} and {no-5}.
+
+* Aug 22, 2021
++
+I added node removal support for the tree module. It's almost ready!
++
+Reseting generations of arena entries does confuse existing entities. If I add *generation of tree*, the operation will be safe, but that would in tern make our generation type fat.
+
+* Aug 23, 2021
++
+It turned out `ArenaCell` is not sound. See {no-2},
+
+* Aug 24, 2021
++
+I'm fixing the tree API, considering the two routes:
+
+** {ego-tree} route
++
+It exposes an explicit root node and makes use of object-oriented API where the tree upgrades `NodeId` to node binding (`NodeRef` or `NodeMut`).
+
+** {indextree} route
++
+It puts most of sibeasling/children linkinig APIs in `NodeId`. `parent.append(child, &mut arena)` reads well to me.
++
+I'll follow {indextree} so that `toy_arena::tree` gets a bit similar to the arena API. Also, I don't want an explicit root node as a user actually.
 

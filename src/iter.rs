@@ -1,10 +1,13 @@
 /*!
-`toy_arena` iterator types
+Iterator types for [`Arena`]
+
+[`EntryBindings`] is a special one, where we can `remove`, `invaliate` or `replace` the binded
+entries.
 */
 
 use crate::*;
 
-/// [`Arena::drain`] → `T`. Removes all items on drop
+/// [`Arena::drain`] → Iterator of `T`. Removes all arena items on drop
 pub struct Drain<'a, T, D, G: Gen> {
     pub(crate) arena: &'a mut Arena<T, D, G>,
     pub(crate) slot: Slot,
@@ -109,7 +112,7 @@ macro_rules! impl_item_iter {
     }};
 }
 
-/// [`Arena::items`] → `&T`
+/// [`Arena::items`] → Iterator of `&T`
 pub struct ItemIter<'a, T, G: Gen> {
     pub(crate) entries: std::slice::Iter<'a, Entry<T, G>>,
     pub(crate) n_items: usize,
@@ -118,7 +121,7 @@ pub struct ItemIter<'a, T, G: Gen> {
 
 impl_item_iter!(ItemIter, ref);
 
-/// [`Arena::items_mut`] → `&mut T`
+/// [`Arena::items_mut`] → Iterator of `&mut T`
 pub struct ItemIterMut<'a, T, G: Gen> {
     pub(crate) entries: std::slice::IterMut<'a, Entry<T, G>>,
     /// Number of items in the arena
@@ -179,7 +182,7 @@ macro_rules! impl_indexed_iter {
     }};
 }
 
-/// [`Arena::iter`] → `(Index, &T)`
+/// [`Arena::iter`] → Iterator of `(Index, &T)`
 pub struct IndexedItemIter<'a, T, D, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::Iter<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
@@ -189,7 +192,7 @@ pub struct IndexedItemIter<'a, T, D, G: Gen> {
 
 impl_indexed_iter!(IndexedItemIter, ref);
 
-/// [`Arena::iter_mut`] → `(Index, &mut T)`
+/// [`Arena::iter_mut`] → Iterator of `(Index, &mut T)`
 pub struct IndexedItemIterMut<'a, T, D, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::IterMut<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
@@ -236,7 +239,7 @@ macro_rules! impl_binds {
             let (slot, entry) = $next($me)?;
             if let Some(_data) = &mut entry.data {
                 $me.n_visited += 1;
-                let slot = unsafe { Slot::from_raw(slot as RawSlot) };
+                let slot = Slot::from_raw(slot as RawSlot);
                 let index = Index::new(slot, entry.gen.clone());
                 return Some(EntryBind {
                     entry,
@@ -251,7 +254,7 @@ macro_rules! impl_binds {
     }};
 }
 
-/// [`Arena::bindings`] → mutable access to arena entries
+/// [`Arena::bindings`] → Iterator of [`EntryBind`]
 pub struct EntryBindings<'a, T, D, G: Gen> {
     entries: Enumerate<std::slice::IterMut<'a, Entry<T, G>>>,
     slot_states: &'a mut UnsafeCell<SlotStates>,
@@ -286,10 +289,14 @@ pub struct EntryBind<'a, T, D, G: Gen> {
 }
 
 impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
     pub fn get(&self) -> &T {
         self.entry.data.as_ref().unwrap()
     }
 
+    /// # Safety
+    /// Panics if the data is removed/invaldated.
     pub fn get_mut(&mut self) -> &mut T {
         self.entry.data.as_mut().unwrap()
     }

@@ -3,73 +3,6 @@ Try `cargo miri test` and if it detects UB
 */
 
 use super::*;
-use std::mem;
-
-#[test]
-fn size() {
-    // `Index` is 8 bytes long by default
-    assert_eq!(mem::size_of::<Index<()>>(), mem::size_of::<u32>() * 2);
-
-    // the nonzero type reduces the optional index size
-    assert_eq!(
-        mem::size_of::<Option<Index<()>>>(),
-        mem::size_of::<Index<()>>()
-    );
-
-    // unfortunatelly, entry is a bit too long with occupied tag
-    assert_eq!(mem::size_of::<Entry<u32>>(), 12);
-
-    // TODO: maybe use nonmax slot?
-    assert_eq!(mem::size_of::<Option<Slot>>(), 8);
-}
-
-/// `cargo +nightly miri test`
-#[test]
-fn cell() {
-    let mut arena = Arena::<usize>::new();
-
-    let ix0 = arena.insert(0);
-    let ix1 = arena.insert(10);
-    let ix2 = arena.insert(100);
-    let ix3 = arena.insert(1000);
-
-    {
-        let cell = arena.cell();
-
-        let x0 = cell.get_mut(ix0).unwrap();
-        let x1 = cell.get_mut(ix1).unwrap();
-        let x2 = cell.get_mut(ix2).unwrap();
-        let x3 = cell.get_mut(ix3).unwrap();
-
-        *x0 = 50;
-        *x1 = 500;
-        *x2 = 5000;
-        *x3 = 50000;
-    }
-
-    assert_eq!(arena.get(ix0), Some(&50));
-    assert_eq!(arena.get(ix1), Some(&500));
-    assert_eq!(arena.get(ix2), Some(&5000));
-    assert_eq!(arena.get(ix3), Some(&50000));
-}
-
-#[test]
-#[should_panic]
-fn cell_panic() {
-    let mut arena = Arena::<usize>::new();
-
-    let ix0 = arena.insert(0);
-    let ix1 = arena.insert(10);
-    let ix2 = arena.insert(100);
-
-    let cell = arena.cell();
-    let _x0 = cell.get_mut(ix0).unwrap();
-    let x1 = cell.get_mut(ix1).unwrap();
-    let _x2 = cell.get_mut(ix2).unwrap();
-
-    // panic!
-    let x1_2 = cell.get_mut(ix1);
-}
 
 #[test]
 fn entry_binds() {
@@ -103,12 +36,12 @@ fn insert_remove_invalidate_replace() {
     assert_eq!(entities.capacity(), 2);
 
     let index0: Index<Entity> = entities.insert(Entity { hp: 0 });
-    assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
+    assert_eq!(index0.slot(), Slot::from_raw(0));
     assert_eq!(entities.len(), 1);
     assert_eq!(entities.capacity(), 2);
 
     let index1: Index<Entity> = entities.insert(Entity { hp: 1 });
-    assert_eq!(index1.slot(), unsafe { Slot::from_raw(1) });
+    assert_eq!(index1.slot(), Slot::from_raw(1));
     assert_eq!(entities.len(), 2);
 
     let removed_entity = entities.remove(index0);
@@ -117,27 +50,27 @@ fn insert_remove_invalidate_replace() {
 
     let index0: Index<Entity> = entities.insert(Entity { hp: 10 });
     assert_eq!(entities.len(), 2);
-    assert_eq!(index0.slot(), unsafe { Slot::from_raw(0) });
+    assert_eq!(index0.slot(), Slot::from_raw(0));
 
     // extend
     let index2: Index<Entity> = entities.insert(Entity { hp: 2 });
-    assert_eq!(index2.slot(), unsafe { Slot::from_raw(2) });
+    assert_eq!(index2.slot(), Slot::from_raw(2));
     assert_eq!(entities.len(), 3);
     assert_eq!(entities.capacity(), 4);
 
     let index3: Index<Entity> = entities.insert(Entity { hp: 3 });
-    assert_eq!(index3.slot(), unsafe { Slot::from_raw(3) });
+    assert_eq!(index3.slot(), Slot::from_raw(3));
     assert_eq!(entities.len(), 4);
     assert_eq!(entities.capacity(), 4);
 
     // extend
     let index4: Index<Entity> = entities.insert(Entity { hp: 4 });
-    assert_eq!(index4.slot(), unsafe { Slot::from_raw(4) });
+    assert_eq!(index4.slot(), Slot::from_raw(4));
     assert_eq!(entities.len(), 5);
     assert_eq!(entities.capacity(), 8);
 
     let index4_2: Index<Entity> = entities.replace(index4, Entity { hp: 400 });
-    assert_eq!(index4_2.slot(), unsafe { Slot::from_raw(4) });
+    assert_eq!(index4_2.slot(), Slot::from_raw(4));
     assert_eq!(index4_2.gen(), NonZeroU32::new(3).unwrap());
     assert_eq!(entities.get(index4), None);
     assert_eq!(entities.remove(index4), None);

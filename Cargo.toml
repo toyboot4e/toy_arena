@@ -9,4 +9,3 @@ exclude = ["devlog.adoc"]
 
 [dependencies]
 derivative = "2.2.0"
-smallvec = "1.6.1"

@@ -1,5 +1,5 @@
 /*!
-Iterator types for the [`Tree`]
+Iterators of immutable bindings of tree nodes
 */
 
 // TODO: impl double-ended iterator
@@ -11,22 +11,48 @@ use derivative::Derivative;
 
 use super::*;
 
-/// Reference to a node and their children
+/// Debug-only validation
+#[cfg(debug_assertions)]
+macro_rules! validate_slot {
+    ($tree:expr, $slot:expr) => {{
+        let entry = $tree.nodes.entries.get($slot.raw as usize).unwrap();
+        let node = entry.data.as_ref().unwrap();
+        if node.clink.first.is_some() || node.clink.last.is_some() {
+            assert_ne!(
+                node.clink.first, node.clink.last,
+                "bug: first/last child must not be the same node"
+            );
+        }
+    }};
+}
+
+/// Debug-only validation
+#[cfg(not(debug_assertions))]
+macro_rules! validate_slot {
+    ($tree:expr, $slot:expr) => {};
+}
+
+/// Binding of existing node and their children
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct NodeRef<'a, T, D = (), G: Gen = DefaultGen> {
-    pub(crate) slot: Slot,
+    slot: Slot,
     #[derivative(Debug = "ignore")]
-    pub(crate) tree: &'a Tree<T, D, G>,
+    tree: &'a Tree<T, D, G>,
 }
 
 impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
+    pub fn new(slot: Slot, tree: &'a Tree<T, D, G>) -> Self {
+        validate_slot!(tree, slot);
+        Self { slot, tree }
+    }
+
     pub fn id(&self) -> NodeId<T, D, G> {
         // we now the targetting entry exists
         self.tree.nodes.upgrade(self.slot).unwrap()
     }
 
-    pub fn node(&self) -> &'a Node<T> {
+    pub(crate) fn node(&self) -> &'a Node<T> {
         self.tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
@@ -77,19 +103,20 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
     type Item = NodeRef<'a, T, D, G>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.next?;
-        let next_node = self.tree.nodes.get_by_slot(next).unwrap();
+        let next_node = self
+            .tree
+            .nodes
+            .get_by_slot(next)
+            .expect("Internal error: invalid `next`");
         self.next = next_node.slink.next;
-        Some(NodeRef {
-            slot: next,
-            tree: self.tree,
-        })
+        Some(NodeRef::new(next, self.tree))
     }
 }
 
 // --------------------------------------------------------------------------------
 // Automatic iterators
 
-/// Return value [`Traverse::next`]
+/// Return value of [`Traverse::next`]
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub enum TraverseItem<'a, T> {
@@ -129,33 +156,26 @@ impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
             let last = self.states.last_mut()?;
             let res = match last {
                 TraverseState::Parent(parent) => {
-                    let parent = NodeRef {
-                        tree: parent.tree,
-                        slot: parent.slot,
-                    };
+                    let parent = NodeRef::new(parent.slot, parent.tree);
                     let node = parent.node();
 
                     self.states.pop();
                     self.maybe_push_children(&node);
-
-                    // the node
                     TraverseItem::Node(node)
                 }
                 TraverseState::FirstChild(child) => {
                     let node = self.tree.nodes.get_by_slot(child.slot).unwrap();
 
                     self.states.pop();
-                    self.maybe_push_siblings(&node);
+                    // siblings of the child
+                    self.push_siblings_of_first_chilld(&node);
+                    // children of the child
                     self.maybe_push_children(&node);
-
                     TraverseItem::Child(node)
                 }
                 TraverseState::NonFirstChildren(siblings) => match siblings.next() {
                     Some(next) => {
-                        let cloned = NodeRef {
-                            slot: next.slot,
-                            tree: next.tree,
-                        };
+                        let cloned = NodeRef::new(next.slot, next.tree);
                         self.states.push(TraverseState::Parent(cloned));
                         continue;
                     }
@@ -166,10 +186,7 @@ impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
                 },
                 TraverseState::ImplicitRootChildren(siblings) => match siblings.next() {
                     Some(next) => {
-                        let cloned = NodeRef {
-                            slot: next.slot,
-                            tree: next.tree,
-                        };
+                        let cloned = NodeRef::new(next.slot, next.tree);
                         self.states.push(TraverseState::Parent(cloned));
                         continue;
                     }
@@ -193,16 +210,16 @@ impl<'a, T, D, G: Gen> Traverse<'a, T, D, G> {
                 tree: self.tree,
                 slot: child,
             }));
+        } else {
+            debug_assert!(node.clink.last.is_none());
         }
     }
 
-    fn maybe_push_siblings(&mut self, node: &Node<T>) {
-        if let Some(sibling) = node.slink.next.clone() {
-            let siblings = SiblingsNext {
-                next: Some(sibling),
-                tree: self.tree,
-            };
-            self.states.push(TraverseState::NonFirstChildren(siblings));
-        }
+    fn push_siblings_of_first_chilld(&mut self, node: &Node<T>) {
+        let siblings = SiblingsNext {
+            next: node.slink.next.clone(),
+            tree: self.tree,
+        };
+        self.states.push(TraverseState::NonFirstChildren(siblings));
     }
 }
