@@ -127,7 +127,7 @@ pub enum TraverseItem<'a, T> {
     EndChildren,
 }
 
-/// Iterator of a node and their children (depth-first search)
+/// Generic traersing utility
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct Traverse<'a, T, D = (), G: Gen = DefaultGen> {
@@ -145,7 +145,7 @@ pub(crate) enum TraverseState<'a, T, D = (), G: Gen = DefaultGen> {
     Parent(NodeRef<'a, T, D, G>),
     FirstChild(NodeRef<'a, T, D, G>),
     NonFirstChildren(SiblingsNext<'a, T, D, G>),
-    ImplicitRootChildren(SiblingsNext<'a, T, D, G>),
+    MultileRootNodes(SiblingsNext<'a, T, D, G>),
 }
 
 impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
@@ -184,7 +184,7 @@ impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
                         TraverseItem::EndChildren
                     }
                 },
-                TraverseState::ImplicitRootChildren(siblings) => match siblings.next() {
+                TraverseState::MultileRootNodes(siblings) => match siblings.next() {
                     Some(next) => {
                         let cloned = NodeRef::new(next.slot, next.tree);
                         self.states.push(TraverseState::Parent(cloned));

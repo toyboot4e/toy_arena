@@ -4,6 +4,8 @@ Rooted tree layered on top of the generational arena
 # Similar crates
 * [indextree](https://docs.rs/indextree/latest/indextree/)
 * [ego_tree](https://docs.rs/ego-tree/latest/ego_tree/)
+
+NOTE: This module definitely needs more tests!
 */
 
 // TODO: share arena/tree iter impls
@@ -194,10 +196,18 @@ impl<T, D, G: Gen> Tree<T, D, G> {
         let id = self.nodes.insert(node);
 
         // NOTE: The first and last fields must not overlap.
-        self.root.last = Some(id.slot());
-        if self.root.first.is_none() {
-            self.root.first = Some(id.slot());
+        // linking
+        if let Some(last_slot) = self.root.last {
+            let last = self.node_mut_by_slot(last_slot).unwrap();
+            last.slink.next = Some(id.slot);
+            let node = self.node_mut_by_slot(id.slot).unwrap();
+            node.slink.prev = Some(last_slot);
+        } else {
+            if self.root.first.is_none() {
+                self.root.first = Some(id.slot());
+            }
         }
+        self.root.last = Some(id.slot());
 
         id
     }
@@ -221,44 +231,73 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 }
 
-/// # Mutable iterators
+/// # Traversal terators
 impl<T, D, G: Gen> Tree<T, D, G> {
-    /// Depth-first search
-    pub fn traverse(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
+    /// Sub tree rooted at the node (depth-first, preorder)
+    pub fn subtree(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
         let states = vec![iter::TraverseState::Parent(iter::NodeRef::new(
             id.slot, self,
         ))];
         iter::Traverse { tree: self, states }
     }
 
-    /// Children of the implicit root node
-    pub fn rooted_nodes(&self) -> iter::SiblingsNext<T, D, G> {
+    /// Sub trees rooted at this node and the siblings (depth-first, preorder)
+    pub fn traverse(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
+        let states = vec![iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
+            next: Some(id.slot),
+            tree: self,
+        })];
+        iter::Traverse { tree: self, states }
+    }
+
+    /// Sub trees at the root
+    pub fn traverse_root_nodes(&self) -> iter::Traverse<T, D, G> {
+        let mut states = vec![];
+        states.push(iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
+            next: self.root.first,
+            tree: self,
+        }));
+        iter::Traverse { tree: self, states }
+    }
+}
+
+/// # Flat, non-recursive iterators
+impl<T, D, G: Gen> Tree<T, D, G> {
+    /// Sub trees rooted at siblings after this node (depth-first, preorder)
+    pub fn siblings(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
+        let states = vec![iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
+            next: self.node(id).and_then(|n| n.slink.next),
+            tree: self,
+        })];
+        iter::Traverse { tree: self, states }
+    }
+
+    /// Children (depth-first, preorder)
+    pub fn children(&mut self, id: NodeId<T, D, G>) -> iter::SiblingsNext<T, D, G> {
+        let first = self.node(id).and_then(|node| node.clink.first);
+        iter::SiblingsNext {
+            next: first,
+            tree: self,
+        }
+    }
+
+    /// Returns iterator of child node bindings
+    pub fn children_mut(&mut self, id: NodeId<T, D, G>) -> iter_mut::SiblingsMutNext<T, D, G> {
+        let first = self.node(id).and_then(|node| node.clink.first);
+        let bind = iter_mut::TreeBind::new(self);
+        iter_mut::SiblingsMutNext { bind, next: first }
+    }
+
+    pub fn root_nodes(&self) -> iter::SiblingsNext<T, D, G> {
         iter::SiblingsNext {
             next: self.root.first,
             tree: self,
         }
     }
 
-    /// Depth-first search
-    pub fn root_traverse(&self) -> iter::Traverse<T, D, G> {
-        let mut states = Vec::new();
-        if let Some(first) = self.root.first {
-            states.push(iter::TraverseState::ImplicitRootChildren(
-                iter::SiblingsNext {
-                    next: Some(first),
-                    tree: self,
-                },
-            ))
-        };
-        iter::Traverse { tree: self, states }
-    }
-}
-
-/// # Mutable binding iterators
-impl<T, D, G: Gen> Tree<T, D, G> {
     /// Returns iterator of child node bindings
-    pub fn children_mut(&mut self, id: NodeId<T, D, G>) -> iter_mut::SiblingsMutNext<T, D, G> {
-        let first = self.node(id).and_then(|node| node.clink.first);
+    pub fn root_nodes_mut(&mut self) -> iter_mut::SiblingsMutNext<T, D, G> {
+        let first = self.root.first;
         let bind = iter_mut::TreeBind::new(self);
         iter_mut::SiblingsMutNext { bind, next: first }
     }
@@ -333,15 +372,16 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         Some(child_id)
     }
 
-    /// Detaches the child of the node
-    pub fn detach(
-        self,
-        tree: &mut Tree<T, D, G>,
-        child: NodeId<T, D, G>,
-    ) -> Option<NodeId<T, D, G>> {
-        let child = tree.node(child)?;
-        todo!()
-    }
+    // /// Detaches the child of the node
+    // pub fn detach(
+    //     self,
+    //     tree: &mut Tree<T, D, G>,
+    //     child: NodeId<T, D, G>,
+    // ) -> Option<NodeId<T, D, G>> {
+    //     tree.children(self).find(|c| c.
+    //     let child = tree.node(child)?;
+    //     todo!()
+    // }
 
     /// Invalidates the child of the node. This is cheaper than [`detach`](Self::detach).
     pub fn invalidate(

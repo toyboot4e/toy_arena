@@ -79,41 +79,42 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     }
 
     /// # Safety
-    /// Panics if the data is removed/invaldated.
+    /// FIXME: Panics if the data is removed/invaldated.
     pub fn id(&self) -> NodeId<T, D, G> {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.upgrade(self.slot).unwrap()
     }
 
     /// # Safety
-    /// Panics if the data is removed/invaldated.
+    /// FIXME: Panics if the data is removed/invaldated.
     unsafe fn node(&self) -> &Node<T> {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
     /// # Safety
-    /// Panics if the data is removed/invaldated.
+    /// FIXME: Panics if the data is removed/invaldated.
     unsafe fn node_mut(&self) -> &mut Node<T> {
         let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.get_mut_by_slot(self.slot).unwrap()
     }
 
     /// # Safety
-    /// Panics if the data is removed/invaldated.
+    /// FIXME: Panics if the data is removed/invaldated.
     pub fn data(&self) -> &T {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.get_by_slot(self.slot).unwrap().data()
     }
 
     /// # Safety
-    /// Panics if the data is removed/invaldated.
+    /// FIXME: Panics if the data is removed/invaldated.
     pub fn data_mut(&mut self) -> &mut T {
         let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.get_mut_by_slot(self.slot).unwrap().data_mut()
     }
 
     /// Removes subtree rooted by this node
+    // TODO: make use of util in one place
     pub fn remove(&mut self) {
         let node = unsafe { self.node() };
         let slink = node.slink.clone();
@@ -158,9 +159,17 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     }
 }
 
-/// # ---- Mutable iterators ----
+/// # ---- Iterators ----
 impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     // TODO: add immutable iterators
+
+    /// This node and nodes after this node
+    pub fn traverse_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
+        SiblingsMutNext {
+            bind: self.bind.clone(),
+            next: Some(self.slot),
+        }
+    }
 
     /// Nodes after this node
     pub fn siblings_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
@@ -170,13 +179,13 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         }
     }
 
-    /// This node and nodes after this node
-    pub fn preorder_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
-        SiblingsMutNext {
-            bind: self.bind.clone(),
-            next: Some(self.slot),
-        }
-    }
+    // /// Sub tree rooted at the node (depth-first, preorder)
+    // pub fn subtree(&self, id: NodeId<T,D,G>) -> iter::Traverse<T,D,G> {
+    //     let states = vec![iter::TraverseState::Parent(iter::NodeRef::new(
+    //         id.slot, self,
+    //     ))];
+    //     iter::Traverse { tree: self, states }
+    // }
 
     /// Children of this node
     pub fn children_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
