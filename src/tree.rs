@@ -449,7 +449,7 @@ let tree: Tree<usize> = tree! {
 #[macro_export]
 macro_rules! tree {
     ($($x:tt),* $(,)?) => {{
-        let mut tree = Tree::new();
+        let mut tree = $crate::tree::Tree::new();
         tree!(@ tree, $($x),*);
         tree
     }};

@@ -718,7 +718,7 @@ let data: Arena<usize> = arena![0, 1, 2, 3, 4];
 #[macro_export]
 macro_rules! arena {
     ($($data:expr),*) => {{
-        let mut arena = Arena::new();
+        let mut arena = $crate::Arena::new();
         $(
             arena.insert($data);
         )*
