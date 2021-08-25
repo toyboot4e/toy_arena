@@ -19,6 +19,18 @@ pub mod iter_mut;
 #[doc(inline)]
 pub use crate::tree;
 
+/// [`Tree`] without generations
+pub type VecTree<T, D> = Tree<T, D, ()>;
+
+impl Gen for () {
+    fn default_gen() -> Self {
+        ()
+    }
+    fn next(&mut self) -> Self {
+        ()
+    }
+}
+
 // just for doc link
 #[allow(unused)]
 use crate::Index;
