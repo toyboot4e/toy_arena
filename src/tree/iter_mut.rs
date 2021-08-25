@@ -116,25 +116,25 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     /// Removes subtree rooted by this node
     // TODO: make use of util in one place
     pub fn remove(&mut self) {
-        let node = unsafe { self.node() };
-        let slink = node.slink.clone();
-        let parent = node.parent.clone();
-        drop(node);
+        let (slink, parent) = {
+            let node = unsafe { self.node() };
+            (node.slink.clone(), node.parent.clone())
+        };
 
-        // parent
+        // Fix parent-child link
         {
             let tree = unsafe { self.bind.tree_mut() };
-            let clink = if let Some(parent) = parent {
+            let parent_clink = if let Some(parent) = parent {
                 let parent = tree.node_mut_by_slot(parent).unwrap();
                 parent.clink.clone()
             } else {
                 tree.root.clone()
             };
-            clink.remove(tree, self.slot);
+            parent_clink.on_remove_leaf(self.slot, tree);
         }
 
-        // children
-        self.remove_rec();
+        // Remove children
+        self.remove_children();
 
         // Fix the siblnig link
         if let Some(prev) = slink.prev {
@@ -149,11 +149,11 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         }
     }
 
-    fn remove_rec(&mut self) {
+    pub fn remove_children(&mut self) {
         for mut child in self.children_mut() {
-            child.remove_rec();
+            child.remove_children();
         }
-        // remove this node
+        // Invalidate this node WITHOUT fixing the parent-child link
         let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.remove_by_slot(self.slot);
     }

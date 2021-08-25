@@ -1,5 +1,5 @@
 /*!
-Rooted tree layered on top of the generational arena
+Tree layered on top of the generational arena
 
 # Similar crates
 * [indextree](https://docs.rs/indextree/latest/indextree/)
@@ -37,7 +37,7 @@ type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
 // TODO: deep clone
 
 /**
-Non-rooted tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting methods.
+Tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting methods.
 
 # Implmentation note
 
@@ -67,7 +67,7 @@ pub struct Tree<T, D = (), G: Gen = DefaultGen> {
 )]
 pub struct Node<T> {
     token: T,
-    slink: SiblingLink,
+    slink: SiblingsLink,
     clink: ChildLink,
     /// `None` refers to the implicit root node. Parent handle is needed when removing the node
     /// later.
@@ -76,7 +76,7 @@ pub struct Node<T> {
 
 /// Doubly linked list indices for siblings
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-struct SiblingLink {
+struct SiblingsLink {
     // TODO use a nonmax type for slots
     /// Next sibling
     next: Option<Slot>,
@@ -92,19 +92,25 @@ struct ChildLink {
 }
 
 impl ChildLink {
-    pub fn remove<'a, T, D, G: Gen>(&self, tree: &'a mut Tree<T, D, G>, slot: Slot) {
+    pub fn has_any(&self) -> bool {
+        self.first.is_some() || self.last.is_some()
+    }
+
+    /// Fixes parent/child link on leaf node removal
+    pub fn on_remove_leaf<'a, T, D, G: Gen>(&self, child_slot: Slot, tree: &'a mut Tree<T, D, G>) {
         // NOTE: The first and last fields must not overlap.
         debug_assert!(self.first != self.last);
 
+        // Fix the parent-child link
         if let Some(first_slot) = self.first {
-            if first_slot == slot {
-                let first = tree.node_by_slot(first_slot).unwrap();
-                debug_assert!(first.slink.prev.is_none());
+            if first_slot == child_slot {
+                let first_node = tree.node_by_slot(first_slot).unwrap();
+                debug_assert!(first_node.slink.prev.is_none());
 
-                if let Some(next) = first.slink.next {
-                    let next_node = tree.node_mut_by_slot(next).unwrap();
-                    debug_assert!(next_node.slink.prev == Some(first_slot));
-                    next_node.slink.prev = None;
+                if let Some(second_slot) = first_node.slink.next {
+                    let second_node = tree.node_mut_by_slot(second_slot).unwrap();
+                    debug_assert!(second_node.slink.prev == Some(first_slot));
+                    second_node.slink.prev = None;
                 }
 
                 return;
@@ -112,14 +118,14 @@ impl ChildLink {
         }
 
         if let Some(last_slot) = self.last {
-            if last_slot != slot {
-                let last = tree.node_by_slot(last_slot).unwrap();
-                debug_assert!(last.slink.next.is_none());
+            if last_slot == child_slot {
+                let last_node = tree.node_by_slot(last_slot).unwrap();
+                debug_assert!(last_node.slink.next.is_none());
 
-                if let Some(prev_slot) = last.slink.prev {
-                    let prev_node = tree.node_mut_by_slot(prev_slot).unwrap();
-                    debug_assert!(prev_node.slink.next == Some(last_slot));
-                    prev_node.slink.next = None;
+                if let Some(before_last_slot) = last_node.slink.prev {
+                    let before_last_node = tree.node_mut_by_slot(before_last_slot).unwrap();
+                    debug_assert!(before_last_node.slink.next == Some(last_slot));
+                    before_last_node.slink.next = None;
                 }
 
                 return;
@@ -192,7 +198,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 
     /// Appends a new data to the implicit root node
     pub fn insert(&mut self, token: T) -> NodeId<T, D, G> {
-        let node = Node::new(token, None);
+        let node = Node::root(token);
         let id = self.nodes.insert(node);
 
         // NOTE: The first and last fields must not overlap.
@@ -317,12 +323,21 @@ impl<T, D, G: Gen> ops::IndexMut<NodeId<T, D, G>> for Tree<T, D, G> {
 }
 
 impl<T> Node<T> {
-    fn new(token: T, parent: Option<Slot>) -> Self {
+    fn from_parent(token: T, parent: Slot) -> Self {
         Self {
             token,
             clink: Default::default(),
             slink: Default::default(),
-            parent,
+            parent: Some(parent),
+        }
+    }
+
+    fn root(token: T) -> Self {
+        Self {
+            token,
+            clink: Default::default(),
+            slink: Default::default(),
+            parent: None,
         }
     }
 
@@ -339,17 +354,17 @@ impl<T> Node<T> {
 
 /// Implementation for DRT node index
 impl<T, D, G: Gen> NodeId<T, D, G> {
-    /// Attaches child to the node
+    /// Attaches a child to the node
     pub fn attach(self, tree: &mut Tree<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
         if !tree.contains(self) {
             return None;
         };
 
-        let child_node = Node::new(child, Some(self.slot));
+        let child_node = Node::from_parent(child, self.slot);
         let child_id = tree.nodes.insert(child_node);
         let child_slot = child_id.slot();
 
-        // siblngs link
+        // siblings link
         let self_node = tree.node_mut(self).unwrap();
         if let Some(last_slot) = self_node.clink.last.or(self_node.clink.first) {
             let (last_node, child_node) =
