@@ -15,7 +15,7 @@ use super::*;
 #[cfg(debug_assertions)]
 macro_rules! validate_slot {
     ($tree:expr, $slot:expr) => {{
-        let entry = $tree.nodes.entries.get($slot.raw as usize).unwrap();
+        let entry = $tree.nodes.entries.get($slot.to_usize()).unwrap();
         let node = entry.data.as_ref().unwrap();
         if node.clink.first.is_some() || node.clink.last.is_some() {
             assert_ne!(

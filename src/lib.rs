@@ -10,6 +10,9 @@ Goals: Tiny code and real use. Non-goals: Super fast performance.
 NOTE: Still early, bugs can exist!
 */
 
+// TODO: Siblings<Direction>, Traverse<Direction>
+// TODO: prefer immutable generations and slots
+
 // use closures to implement `IntoIter`
 
 pub mod _example;
@@ -138,8 +141,10 @@ assert_eq!(
 pub struct Index<T, D = (), G: Gen = DefaultGen> {
     slot: Slot,
     gen: G,
-    _ty: PhantomData<fn() -> T>,
-    _distinct: PhantomData<fn() -> D>,
+    /// Item type parameter
+    _t: PhantomData<fn() -> T>,
+    /// Distinct type parameter
+    _d: PhantomData<fn() -> D>,
 }
 
 impl<T, D, G: Gen> Index<T, D, G> {
@@ -147,8 +152,8 @@ impl<T, D, G: Gen> Index<T, D, G> {
         Self {
             slot,
             gen,
-            _ty: PhantomData,
-            _distinct: PhantomData,
+            _t: PhantomData,
+            _d: PhantomData,
         }
     }
 
@@ -196,6 +201,10 @@ impl Slot {
 
     pub fn raw(&self) -> RawSlot {
         self.raw
+    }
+
+    pub const fn to_usize(&self) -> usize {
+        self.raw as usize
     }
 
     /// NOTE: Slot is also used to track arena length
@@ -296,7 +305,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// Number of items in this arena
     pub fn len(&self) -> usize {
         let slot_states = unsafe { &*self.slot_states.get() };
-        slot_states.n_items.raw as usize
+        slot_states.n_items.to_usize()
     }
 
     /// Capacity of the backing vec
@@ -313,7 +322,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn insert(&mut self, data: T) -> Index<T, D, G> {
         let slot = self.next_free_slot();
-        let entry = &mut self.entries[slot.raw as usize];
+        let entry = &mut self.entries[slot.to_usize()];
 
         let gen = {
             debug_assert!(entry.data.is_none(), "bug: free slot occupied?");
@@ -343,7 +352,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Returns some item if the generation matchesA. Returns none on mismatch or no data
     pub fn remove(&mut self, index: Index<T, D, G>) -> Option<T> {
-        let entry = &mut self.entries[index.slot.raw as usize];
+        let entry = &mut self.entries[index.slot.to_usize()];
         if entry.gen != index.gen || entry.data.is_none() {
             // generation mistmatch: can't remove
             None
@@ -358,7 +367,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     pub(crate) fn remove_by_slot(&mut self, slot: Slot) -> Option<T> {
         let index = self.upgrade(slot)?;
-        let entry = &mut self.entries[index.slot.raw as usize];
+        let entry = &mut self.entries[index.slot.to_usize()];
         Some(self::remove_binded(
             entry,
             self.slot_states.get_mut().deref_mut(),
@@ -368,15 +377,31 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Returns none if the generation matches. Returns some index on mismatch or no data
     pub fn invalidate(&mut self, index: Index<T, D, G>) -> Option<Index<T, D, G>> {
-        let entry = &mut self.entries[index.slot.raw as usize];
+        let entry = &mut self.entries[index.slot.to_usize()];
         self::invalidate(entry, self.slot_states.get_mut().deref_mut(), index)
+    }
+
+    /// Inalidates given index. Returns some index on updating the generation
+    pub fn invalidate_indices(&mut self, index: Index<T, D, G>) -> Option<Index<T, D, G>> {
+        let entry = &mut self.entries[index.slot.to_usize()];
+        if index.gen == entry.gen && entry.data.is_some() {
+            entry.gen = entry.gen.clone().next();
+            Some(Index {
+                gen: entry.gen,
+                slot: index.slot,
+                _t: PhantomData,
+                _d: PhantomData,
+            })
+        } else {
+            None
+        }
     }
 
     pub fn replace(&mut self, index: Index<T, D, G>, new_data: T) -> Index<T, D, G> {
         if !(self.contains(index)) {
             self.insert(new_data)
         } else {
-            let entry = &mut self.entries[index.slot.raw as usize];
+            let entry = &mut self.entries[index.slot.to_usize()];
             self::replace_binded(entry, index.slot, new_data)
         }
     }
@@ -492,11 +517,11 @@ pub(crate) fn replace_binded<T, D, G: Gen>(
 /// # ----- Accessors -----
 impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn contains(&self, index: Index<T, D, G>) -> bool {
-        self.entries.get(index.slot.raw as usize).is_some()
+        self.entries.get(index.slot.to_usize()).is_some()
     }
 
     pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
-        self.entries.get(index.slot.raw as usize).and_then(|entry| {
+        self.entries.get(index.slot.to_usize()).and_then(|entry| {
             if entry.gen == index.gen {
                 entry.data.as_ref()
             } else {
@@ -508,7 +533,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn get_mut(&mut self, index: Index<T, D, G>) -> Option<&mut T> {
         // NOTE: Rust closure is not (yet) smart enough to borrow only some fileds of struct
         self.entries
-            .get_mut(index.slot.raw as usize)
+            .get_mut(index.slot.to_usize())
             .and_then(|entry| {
                 if entry.gen == index.gen {
                     entry.data.as_mut()
@@ -554,11 +579,11 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Upgrades slot to `Index`. Prefer [`Arena::bindings`] when possible
     pub fn upgrade(&self, slot: Slot) -> Option<Index<T, D, G>> {
-        if slot.raw as usize >= self.entries.len() {
+        if slot.to_usize() >= self.entries.len() {
             return None;
         }
 
-        self.entries.get(slot.raw as usize).and_then(|e| {
+        self.entries.get(slot.to_usize()).and_then(|e| {
             if e.data.is_some() {
                 Some(Index::new(slot, e.gen))
             } else {
@@ -569,12 +594,12 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// Internal use only
     pub(crate) fn get_by_slot(&self, slot: Slot) -> Option<&T> {
-        self.entries.get(slot.raw as usize)?.data.as_ref()
+        self.entries.get(slot.to_usize())?.data.as_ref()
     }
 
     /// Internal use only
     pub(crate) fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
-        self.entries.get_mut(slot.raw as usize)?.data.as_mut()
+        self.entries.get_mut(slot.to_usize())?.data.as_mut()
     }
 
     /// Internal use only
@@ -592,7 +617,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn iter(&self) -> IndexedItemIter<T, D, G> {
         IndexedItemIter {
             entries: self.entries.iter().enumerate(),
-            n_items: unsafe { &*self.slot_states.get() }.n_items.raw as usize,
+            n_items: unsafe { &*self.slot_states.get() }.n_items.to_usize(),
             n_visited: 0,
             _distinct: PhantomData,
         }
@@ -602,7 +627,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn iter_mut(&mut self) -> IndexedItemIterMut<T, D, G> {
         IndexedItemIterMut {
             entries: self.entries.iter_mut().enumerate(),
-            n_items: self.slot_states.get_mut().n_items.raw as usize,
+            n_items: self.slot_states.get_mut().n_items.to_usize(),
             n_visited: 0,
             _distinct: PhantomData,
         }
@@ -612,7 +637,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn items(&self) -> ItemIter<T, G> {
         ItemIter {
             entries: self.entries.iter(),
-            n_items: unsafe { &*self.slot_states.get() }.n_items.raw as usize,
+            n_items: unsafe { &*self.slot_states.get() }.n_items.to_usize(),
             n_visited: 0,
         }
     }
@@ -621,7 +646,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     pub fn items_mut(&mut self) -> ItemIterMut<T, G> {
         ItemIterMut {
             entries: self.entries.iter_mut(),
-            n_items: self.slot_states.get_mut().n_items.raw as usize,
+            n_items: self.slot_states.get_mut().n_items.to_usize(),
             n_visited: 0,
         }
     }
