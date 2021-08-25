@@ -2,9 +2,6 @@
 Iterators of immutable bindings of tree nodes
 */
 
-// TODO: impl double-ended iterator
-// TODO: directon type parameter
-
 use std::iter;
 
 use derivative::Derivative;
@@ -107,7 +104,7 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
             .tree
             .nodes
             .get_by_slot(next)
-            .expect("Internal error: invalid `next`");
+            .expect("bug: invalid `next`");
         self.next = next_node.slink.next;
         Some(NodeRef::new(next, self.tree))
     }

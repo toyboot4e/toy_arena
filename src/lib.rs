@@ -10,7 +10,6 @@ Goals: Tiny code and real use. Non-goals: Super fast performance.
 NOTE: Still early, bugs can exist!
 */
 
-// TODO: Siblings<Direction>, Traverse<Direction>
 // TODO: prefer immutable generations and slots
 
 // use closures to implement `IntoIter`

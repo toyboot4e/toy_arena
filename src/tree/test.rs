@@ -31,7 +31,7 @@ fn automatic_traverse() {
     let x0 = tree.insert("x0");
     let _x0_0 = x0.attach(&mut tree, "x0_0").unwrap();
     let x0_1 = x0.attach(&mut tree, "x0_1").unwrap();
-    let x2 = tree.insert("x1");
+    let _x1 = tree.insert("x1");
     let _x0_1_0 = x0_1.attach(&mut tree, "x0_1_0").unwrap();
 
     // traverse
@@ -78,9 +78,10 @@ x
     x1_1
 xx
 "##;
+    println!("{:#?}", tree);
     self::test_tree_traverse(tree.traverse_root_nodes(), expected);
 
-    tree.remove(x1);
+    tree.bind(x1).unwrap().remove();
 
     assert_eq!(tree.data(x), Some(&"x"));
     assert_eq!(tree.data(x0), Some(&"x0"));

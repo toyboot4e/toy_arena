@@ -5,11 +5,12 @@ Tree layered on top of the generational arena
 * [indextree](https://docs.rs/indextree/latest/indextree/)
 * [ego_tree](https://docs.rs/ego-tree/latest/ego_tree/)
 
-NOTE: This module definitely needs more tests!
+WARNING: This module **definitely** needs more tests!
 */
 
-// TODO: share arena/tree iter impls
-// TODO: extract link operations from iter impls
+// TODO: deep clone
+// TODO: directon type parameter
+// TODO: impl double-ended iterator
 
 pub mod iter;
 pub mod iter_mut;
@@ -33,8 +34,6 @@ use crate::{DefaultGen, Gen, Slot};
 pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T>, D, G>;
 
 type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
-
-// TODO: deep clone
 
 /**
 Tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting methods.
@@ -91,13 +90,27 @@ struct ChildLink {
     last: Option<Slot>,
 }
 
+impl SiblingsLink {
+    /// Fixes siblings link on removal. NOTE: It doesn't mutate the removed node's sibling links!
+    pub fn on_remove<T, D, G: Gen>(self, tree: &mut Tree<T, D, G>) {
+        if let Some(prev) = self.prev {
+            let prev = tree.nodes.get_mut_by_slot(prev).unwrap();
+            prev.slink.next = self.next;
+        }
+        if let Some(next) = self.next {
+            let next = tree.nodes.get_mut_by_slot(next).unwrap();
+            next.slink.prev = self.prev;
+        }
+    }
+}
+
 impl ChildLink {
     pub fn has_any(&self) -> bool {
         self.first.is_some() || self.last.is_some()
     }
 
     /// Fixes parent/child link on leaf node removal
-    pub fn on_remove_leaf<'a, T, D, G: Gen>(&self, child_slot: Slot, tree: &'a mut Tree<T, D, G>) {
+    pub fn on_remove_leaf<T, D, G: Gen>(self, child_slot: Slot, tree: &mut Tree<T, D, G>) {
         // NOTE: The first and last fields must not overlap.
         debug_assert!(self.first != self.last);
 
@@ -131,6 +144,29 @@ impl ChildLink {
                 return;
             }
         }
+    }
+}
+
+pub(crate) fn on_insert_to_implicit_root<T, D, G: Gen>(
+    id: NodeId<T, D, G>,
+    tree: &mut Tree<T, D, G>,
+) {
+    // linking
+    if tree.root.first.is_none() {
+        tree.root.first = Some(id.slot());
+    } else {
+        // NOTE: The first and last fields must not overlap.
+        debug_assert_ne!(tree.root.first, tree.root.last);
+
+        if let Some(last_slot) = tree.root.last.or(tree.root.first) {
+            let last_node = tree.node_mut_by_slot(last_slot).unwrap();
+            debug_assert!(last_node.slink.next.is_none());
+            last_node.slink.next = Some(id.slot);
+            let node = tree.node_mut_by_slot(id.slot).unwrap();
+            node.slink.prev = Some(last_slot);
+        }
+
+        tree.root.last = Some(id.slot());
     }
 }
 
@@ -200,34 +236,11 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn insert(&mut self, token: T) -> NodeId<T, D, G> {
         let node = Node::root(token);
         let id = self.nodes.insert(node);
-
-        // NOTE: The first and last fields must not overlap.
-        // linking
-        if let Some(last_slot) = self.root.last {
-            let last = self.node_mut_by_slot(last_slot).unwrap();
-            last.slink.next = Some(id.slot);
-            let node = self.node_mut_by_slot(id.slot).unwrap();
-            node.slink.prev = Some(last_slot);
-        } else {
-            if self.root.first.is_none() {
-                self.root.first = Some(id.slot());
-            }
-        }
-        self.root.last = Some(id.slot());
-
+        self::on_insert_to_implicit_root(id, self);
         id
     }
 
-    pub fn remove(&mut self, id: NodeId<T, D, G>) -> bool {
-        match self.bind(id) {
-            Some(mut bind) => {
-                bind.remove();
-                true
-            }
-            None => false,
-        }
-    }
-
+    /// Mutablly binds a node. Most mutation should happen here
     pub fn bind<'a>(&'a mut self, id: NodeId<T, D, G>) -> Option<iter_mut::NodeMut<'a, T, D, G>> {
         if !self.nodes.contains(id) {
             None
@@ -385,26 +398,5 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
         }
 
         Some(child_id)
-    }
-
-    // /// Detaches the child of the node
-    // pub fn detach(
-    //     self,
-    //     tree: &mut Tree<T, D, G>,
-    //     child: NodeId<T, D, G>,
-    // ) -> Option<NodeId<T, D, G>> {
-    //     tree.children(self).find(|c| c.
-    //     let child = tree.node(child)?;
-    //     todo!()
-    // }
-
-    /// Invalidates the child of the node. This is cheaper than [`detach`](Self::detach).
-    pub fn invalidate(
-        self,
-        tree: &mut Tree<T, D, G>,
-        child: NodeId<T, D, G>,
-    ) -> Option<NodeId<T, D, G>> {
-        let child = tree.node(child)?;
-        todo!()
     }
 }
