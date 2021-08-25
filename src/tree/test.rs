@@ -13,7 +13,7 @@ use std::fmt::{Debug, Display, Write};
 fn tree_macro_test() {
     use crate::tree;
 
-    let tree: Tree<usize> = tree![
+    let tree: Tree<usize> = tree! {
         0,
         1, {
             10,
@@ -23,7 +23,7 @@ fn tree_macro_test() {
             },
             12,
         },
-    ];
+    };
 
     let expected = r##"
 0
@@ -37,22 +37,6 @@ fn tree_macro_test() {
 
     self::test_tree_manual_walk(tree.root_nodes(), expected);
 }
-
-// #[test]
-// fn tree_macro_test() {
-//     let tree: Tree<usize> = tree![
-//         0,
-//         1, {
-//             11,
-//             12,
-//         },
-//         2,
-//     ];
-//
-//     assert_eq!(tree.get_by_slot(2).unwrap().parent_slot(), Some(1),);
-//     println!("{:?}", tree);
-//     panic!();
-// }
 
 #[test]
 fn manual_traverse() {

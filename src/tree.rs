@@ -433,7 +433,7 @@ Creates a tree
 ```
 use toy_arena::{tree, tree::Tree};
 
-let tree: Tree<usize> = tree![
+let tree: Tree<usize> = tree! {
     0,
     1, {
         10,
@@ -443,7 +443,7 @@ let tree: Tree<usize> = tree![
         },
         12,
     },
-];
+};
 ```
 */
 #[macro_export]
