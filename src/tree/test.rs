@@ -7,13 +7,60 @@ use std::fmt::{Debug, Display, Write};
 // --------------------------------------------------------------------------------
 // iter.rs
 
+// trace_macros!(true);
+
+#[test]
+fn tree_macro_test() {
+    use crate::tree;
+
+    let tree: Tree<usize> = tree![
+        0,
+        1, {
+            10,
+            11, {
+                100,
+                101,
+            },
+            12,
+        },
+    ];
+
+    let expected = r##"
+0
+1
+  10
+  11
+    100
+    101
+  12
+"##;
+
+    self::test_tree_manual_walk(tree.root_nodes(), expected);
+}
+
+// #[test]
+// fn tree_macro_test() {
+//     let tree: Tree<usize> = tree![
+//         0,
+//         1, {
+//             11,
+//             12,
+//         },
+//         2,
+//     ];
+//
+//     assert_eq!(tree.get_by_slot(2).unwrap().parent_slot(), Some(1),);
+//     println!("{:?}", tree);
+//     panic!();
+// }
+
 #[test]
 fn manual_traverse() {
     let mut tree = Tree::<&'static str>::default();
 
     let x = tree.insert("x");
-    let _x0 = x.attach(&mut tree, "x0").unwrap();
-    let _x1 = x.attach(&mut tree, "x1").unwrap();
+    let _x0 = x.attach("x0", &mut tree).unwrap();
+    let _x1 = x.attach("x1", &mut tree).unwrap();
 
     let expected = r##"
 x
@@ -29,10 +76,11 @@ fn automatic_traverse() {
     let mut tree = Tree::<&'static str>::default();
 
     let x0 = tree.insert("x0");
-    let _x0_0 = x0.attach(&mut tree, "x0_0").unwrap();
-    let x0_1 = x0.attach(&mut tree, "x0_1").unwrap();
+    let _x0_0 = x0.attach("x0_0", &mut tree).unwrap();
+    let x0_1 = x0.attach("x0_1", &mut tree).unwrap();
+
     let _x1 = tree.insert("x1");
-    let _x0_1_0 = x0_1.attach(&mut tree, "x0_1_0").unwrap();
+    let _x0_1_0 = x0_1.attach("x0_1_0", &mut tree).unwrap();
 
     // traverse
     let expected = r##"
@@ -64,11 +112,11 @@ fn tree_remove() {
     let mut tree = Tree::<&'static str>::default();
 
     let x = tree.insert("x");
-    let x0 = x.attach(&mut tree, "x0").unwrap();
-    let x1 = x.attach(&mut tree, "x1").unwrap();
-    let x1_0 = x1.attach(&mut tree, "x1_0").unwrap();
+    let x0 = x.attach("x0", &mut tree).unwrap();
+    let x1 = x.attach("x1", &mut tree).unwrap();
+    let x1_0 = x1.attach("x1_0", &mut tree).unwrap();
     let xx = tree.insert("xx");
-    let x1_1 = x1.attach(&mut tree, "x1_1").unwrap();
+    let x1_1 = x1.attach("x1_1", &mut tree).unwrap();
 
     let expected = r##"
 x
@@ -78,11 +126,11 @@ x
     x1_1
 xx
 "##;
+
     println!("{:#?}", tree);
     self::test_tree_traverse(tree.traverse_root_nodes(), expected);
 
     tree.bind(x1).unwrap().remove();
-
     assert_eq!(tree.data(x), Some(&"x"));
     assert_eq!(tree.data(x0), Some(&"x0"));
     assert_eq!(tree.data(x1), None);

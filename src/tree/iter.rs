@@ -1,5 +1,5 @@
 /*!
-Iterators of immutable bindings of tree nodes
+Iterators types for the [`Tree`]
 */
 
 use std::iter;

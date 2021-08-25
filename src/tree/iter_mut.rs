@@ -1,5 +1,5 @@
 /*!
-Iterators of mutable bindings of tree nodes
+Iterators of mutable bindings of the [`Tree`] nodes
 */
 
 use std::{cell::UnsafeCell, mem, rc::Rc};
@@ -103,6 +103,30 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         tree.nodes.get_mut_by_slot(self.slot).unwrap().data_mut()
     }
 
+    pub fn next_sibling(&mut self) -> Option<Self> {
+        let next = {
+            let tree = unsafe { self.bind.tree_mut() };
+            let node = tree.nodes.get_by_slot(self.slot).unwrap();
+            node.slink.next?
+        };
+        Some(Self {
+            bind: self.bind.clone(),
+            slot: next,
+        })
+    }
+
+    pub fn prev_sibling(&mut self) -> Option<Self> {
+        let next = {
+            let tree = unsafe { self.bind.tree_mut() };
+            let node = tree.nodes.get_by_slot(self.slot).unwrap();
+            node.slink.next?
+        };
+        Some(Self {
+            bind: self.bind.clone(),
+            slot: next,
+        })
+    }
+
     pub fn remove_children(&mut self) {
         for mut child in self.children_mut() {
             child.remove_children();
@@ -139,30 +163,6 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         // so that the link can be used by the iterator
         let tree = unsafe { self.bind.tree_mut() };
         slink.on_remove(tree);
-    }
-
-    pub fn next_sibling(&mut self) -> Option<Self> {
-        let next = {
-            let tree = unsafe { self.bind.tree_mut() };
-            let node = tree.nodes.get_by_slot(self.slot).unwrap();
-            node.slink.next?
-        };
-        Some(Self {
-            bind: self.bind.clone(),
-            slot: next,
-        })
-    }
-
-    pub fn prev_sibling(&mut self) -> Option<Self> {
-        let next = {
-            let tree = unsafe { self.bind.tree_mut() };
-            let node = tree.nodes.get_by_slot(self.slot).unwrap();
-            node.slink.next?
-        };
-        Some(Self {
-            bind: self.bind.clone(),
-            slot: next,
-        })
     }
 }
 

@@ -170,6 +170,28 @@ pub(crate) fn on_insert_to_implicit_root<T, D, G: Gen>(
     }
 }
 
+impl<T> Node<T> {
+    pub fn parent_slot(&self) -> Option<Slot> {
+        self.parent
+    }
+
+    pub fn next_sibling_slot(self) -> Option<Slot> {
+        self.slink.next
+    }
+
+    pub fn prev_sibling_slot(self) -> Option<Slot> {
+        self.slink.prev
+    }
+
+    pub fn first_child_slot(self) -> Option<Slot> {
+        self.clink.first
+    }
+
+    pub fn last_child_slot(self) -> Option<Slot> {
+        self.clink.last
+    }
+}
+
 impl<T, D, G: Gen> Default for Tree<T, D, G> {
     fn default() -> Self {
         Self::with_capacity(0)
@@ -201,7 +223,10 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn capacity(&self) -> usize {
         self.nodes.capacity()
     }
+}
 
+/// # ----- Node accessors -----
+impl<T, D, G: Gen> Tree<T, D, G> {
     /// Returns a reference to the node
     pub fn node(&self, id: NodeId<T, D, G>) -> Option<&Node<T>> {
         self.nodes.get(id)
@@ -213,12 +238,12 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 
     /// Returns a reference to the node
-    pub(crate) fn node_by_slot(&self, slot: Slot) -> Option<&Node<T>> {
+    pub fn node_by_slot(&self, slot: Slot) -> Option<&Node<T>> {
         self.nodes.get_by_slot(slot)
     }
 
     /// Returns a mutable reference to the node
-    pub(crate) fn node_mut_by_slot(&mut self, slot: Slot) -> Option<&mut Node<T>> {
+    pub fn node_mut_by_slot(&mut self, slot: Slot) -> Option<&mut Node<T>> {
         self.nodes.get_mut_by_slot(slot)
     }
 
@@ -236,6 +261,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn insert(&mut self, token: T) -> NodeId<T, D, G> {
         let node = Node::root(token);
         let id = self.nodes.insert(node);
+
         self::on_insert_to_implicit_root(id, self);
         id
     }
@@ -250,7 +276,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 }
 
-/// # Traversal terators
+/// # ----- Traversal terators -----
 impl<T, D, G: Gen> Tree<T, D, G> {
     /// Sub tree rooted at the node (depth-first, preorder)
     pub fn subtree(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
@@ -280,7 +306,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 }
 
-/// # Flat, non-recursive iterators
+/// # ----- Flat, non-recursive iterators -----
 impl<T, D, G: Gen> Tree<T, D, G> {
     /// Sub trees rooted at siblings after this node (depth-first, preorder)
     pub fn siblings(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
@@ -365,10 +391,10 @@ impl<T> Node<T> {
     }
 }
 
-/// Implementation for DRT node index
+/// # ---- Tree node impls -----
 impl<T, D, G: Gen> NodeId<T, D, G> {
     /// Attaches a child to the node
-    pub fn attach(self, tree: &mut Tree<T, D, G>, child: T) -> Option<NodeId<T, D, G>> {
+    pub fn attach(self, child: T, tree: &mut Tree<T, D, G>) -> Option<NodeId<T, D, G>> {
         if !tree.contains(self) {
             return None;
         };
@@ -399,4 +425,105 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
 
         Some(child_id)
     }
+}
+
+/**
+Creates a tree
+
+```
+use toy_arena::{tree, tree::Tree};
+
+let tree: Tree<usize> = tree![
+    0,
+    1, {
+        10,
+        11, {
+            100,
+            101,
+        },
+        12,
+    },
+];
+```
+*/
+#[macro_export]
+macro_rules! tree {
+    ($($x:tt),* $(,)?) => {{
+        let mut tree = Tree::new();
+        tree!(@ tree, $($x),*);
+        tree
+    }};
+
+    // base pattern
+    (@ $tree:expr $(,)?) => {
+    };
+
+    // ---------- ROOT ----------
+    // We don't haveparent node yet
+
+    // NOTE: Be sure to match `{ .. } ` in early rules and `tt` in later rules
+
+    // root
+    (@ $tree:expr, $data:expr, { $($cs:tt),* $(,)? } $(,)?) => {
+        {
+            let parent = $tree.insert($data);
+            tree!(@@ $tree, parent, $($cs),*);
+        }
+    };
+
+    // root + rest
+    (@ $tree:expr, $data:expr, { $($cs:tt),* $(,)? }, $($rest:tt),* $(,)?) => {
+        {
+            let parent = $tree.insert($data);
+            tree!(@@ $tree, parent, $($cs),*);
+        }
+        tree!(@ $tree, $($rest),*);
+    };
+
+    // leaf
+    (@ $tree:expr, $l:expr $(,)?) => {
+        $tree.insert($l);
+    };
+
+    // leaf + rest
+    (@ $tree:expr, $l:expr, $($rest:tt),+ $(,)?) => {
+        $tree.insert($l);
+        tree!(@ $tree, $($rest),*);
+    };
+
+    // ---------- PARENT ----------
+    // We have parent node index `$p`
+
+    // base
+    (@@ $tree:expr, $p:expr $(,)?) => {};
+
+    // root
+    (@@ $tree:expr, $p:expr, $c:expr, { $($cs:tt),* $(,)? } $(,)?) => {
+        {
+            let parent = $c.attach($c, &mut $tree).unwrap();
+            tree!(@@ $tree, parent, $($cs),*);
+        }
+    };
+
+    // root + rest
+    (@@ $tree:expr, $p:expr, $c:expr, { $($cs:tt),* $(,)? }, $($rest:tt)* $(,)?) => {
+        {
+            let parent = $p.attach($c, &mut $tree).unwrap();
+            tree!(@@ $tree, parent, $($cs),*);
+        }
+        tree!(@@ $tree, $p, $($rest),*);
+    };
+
+    // leaf
+    (@@ $tree:expr, $p:expr, $l:expr $(,)?) => {
+        $p.attach($l, &mut $tree).unwrap();
+    };
+
+    // leaf + rest
+    (@@ $tree:expr, $p:expr, $l:expr, $($rest:tt),* $(,)?) => {
+        $p.attach($l, &mut $tree).unwrap();
+        tree!(@@ $tree, $p, $($rest),*);
+    };
+
+    // TODO: parent child
 }
