@@ -707,7 +707,7 @@ impl<T, D, G: Gen> FromIterator<T> for Arena<T, D, G> {
 }
 
 /**
-Creates an arena and inserts given values. `Arena<T>` type might have to be annotated.
+Creates an [`Arena`] and with given values. [`Arena<T>`] type might have to be annotated.
 
 # Example
 ```

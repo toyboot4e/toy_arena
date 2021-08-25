@@ -15,6 +15,10 @@ WARNING: This module **definitely** needs more tests!
 pub mod iter;
 pub mod iter_mut;
 
+// The `tree!` macro is defined in this module but exported at the crate root (unfortunatelly)
+#[doc(inline)]
+pub use crate::tree;
+
 // just for doc link
 #[allow(unused)]
 use crate::Index;
@@ -428,7 +432,7 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
 }
 
 /**
-Creates a tree
+Creates a [`Tree`] with given hierarchy of value
 
 ```
 use toy_arena::{tree, tree::Tree};
@@ -524,6 +528,4 @@ macro_rules! tree {
         $p.attach($l, &mut $tree).unwrap();
         tree!(@@ $tree, $p, $($rest),*);
     };
-
-    // TODO: parent child
 }

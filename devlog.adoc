@@ -65,3 +65,28 @@ I'll follow {indextree} so that `toy_arena::tree` is a bit similar to the arena'
 
 I also tried adding GitHub actions. Does `cargo +nightly miri test` run?
 
+* Aug 25, 2021
++
+I added `tree!` macro. The implementation is a bit mess, and debugging was hard, but soon got it!:
++
+[source,rust]
+----
+let tree: Tree<usize> = tree! {
+    0,
+    1, {
+        10,
+        11, {
+            100,
+            101,
+        },
+        12,
+    },
+};
+----
++
+Tips:
+* Use https://doc.rust-lang.org/beta/unstable-book/library-features/trace-macros.html[trace_macros] for debugging
+* Use `$crate` https://doc.rust-lang.org/reference/macros-by-example.html#hygiene[hygiene]
+* Match to `{ .. }` first (with earlier rules) and then `tt` s (in later rules)
+* https://rust-lang.github.io/rfcs/3086-macro-metavar-expr.html[3086-macro-metavar-expr - The Rust RFC Book] I've never given it a try though!
+
