@@ -122,7 +122,7 @@ x2
     self::test_tree_traverse(tree.traverse_root_nodes(), expected);
 
     let mut nodes = tree.root_nodes_mut();
-    nodes.next();
+    nodes.next().unwrap();
     nodes
         .bind()
         .unwrap()
@@ -138,6 +138,17 @@ x1
   x1-0
   x1-1
   x1-2
+x2
+"##;
+    self::test_tree_traverse(tree.traverse_root_nodes(), expected);
+
+    let mut nodes = tree.root_nodes_mut();
+    nodes.next().unwrap();
+    nodes.bind().unwrap().remove();
+    drop(nodes);
+
+    let expected = r##"
+x0
 x2
 "##;
     self::test_tree_traverse(tree.traverse_root_nodes(), expected);
