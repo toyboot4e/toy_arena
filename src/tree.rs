@@ -88,29 +88,6 @@ pub struct Node<T> {
     link: Link,
 }
 
-pub(crate) fn on_insert_to_implicit_root<T, D, G: Gen>(
-    id: NodeId<T, D, G>,
-    tree: &mut Tree<T, D, G>,
-) {
-    // linking
-    if tree.root.first_child().is_none() {
-        tree.root.set_first_child(Some(id.slot()));
-    } else {
-        // NOTE: The first and last fields must not overlap.
-        debug_assert_ne!(tree.root.first_child(), tree.root.last_child());
-
-        if let Some(last_slot) = tree.root.last_child().or(tree.root.first_child()) {
-            let last_node = tree.node_mut_by_slot(last_slot).unwrap();
-            debug_assert!(last_node.link.next_sibling().is_none());
-            last_node.link.set_next_sibling(Some(id.slot));
-            let node = tree.node_mut_by_slot(id.slot).unwrap();
-            node.link.set_prev_sibling(Some(last_slot));
-        }
-
-        tree.root.set_last_child(Some(id.slot()));
-    }
-}
-
 impl<T> Node<T> {
     fn from_parent(token: T, parent: Slot) -> Self {
         Self {
@@ -227,7 +204,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
         let node = Node::root(token);
         let id = self.nodes.insert(node);
 
-        self::on_insert_to_implicit_root(id, self);
+        link::fix_root_on_insert(self, id);
         id
     }
 

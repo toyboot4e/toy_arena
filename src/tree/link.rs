@@ -4,7 +4,10 @@ Link of parent/child and siblings
 
 // TODO use a nonmax type for slots
 
-use crate::{tree::Tree, Gen, Slot};
+use crate::{
+    tree::{NodeId, Tree},
+    Gen, Slot,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub(crate) struct Link {
@@ -91,6 +94,26 @@ pub(crate) fn fix_siblings_on_remove<T, D, G: Gen>(link: &Link, tree: &mut Tree<
     if let Some(next) = slink.next {
         let next_node = tree.nodes.get_mut_by_slot(next).unwrap();
         next_node.link.set_prev_sibling(slink.prev);
+    }
+}
+
+/// On `Tree:insert`
+pub(crate) fn fix_root_on_insert<T, D, G: Gen>(tree: &mut Tree<T, D, G>, id: NodeId<T, D, G>) {
+    if tree.root.first_child().is_none() {
+        tree.root.set_first_child(Some(id.slot()));
+    } else {
+        // NOTE: The first and last fields must not overlap.
+        debug_assert_ne!(tree.root.first_child(), tree.root.last_child());
+
+        if let Some(last_slot) = tree.root.last_child().or(tree.root.first_child()) {
+            let last_node = tree.node_mut_by_slot(last_slot).unwrap();
+            debug_assert!(last_node.link.next_sibling().is_none());
+            last_node.link.set_next_sibling(Some(id.slot));
+            let node = tree.node_mut_by_slot(id.slot).unwrap();
+            node.link.set_prev_sibling(Some(last_slot));
+        }
+
+        tree.root.set_last_child(Some(id.slot()));
     }
 }
 
