@@ -1,5 +1,7 @@
 /*!
 Link of parent/child and siblings
+
+All mutation to the link is defined in this file.
 */
 
 // TODO use a nonmax type for slots
@@ -115,6 +117,10 @@ pub(crate) fn fix_root_on_insert<T, D, G: Gen>(tree: &mut Tree<T, D, G>, id: Nod
 
         tree.root.set_last_child(Some(id.slot()));
     }
+}
+
+pub(crate) fn fix_after_clean_children(link: &mut Link) {
+    link.clink = Default::default();
 }
 
 /// Fixes parent/child link on leaf node removal

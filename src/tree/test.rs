@@ -93,40 +93,54 @@ x0
 
 #[test]
 fn tree_remove() {
-    let mut tree = Tree::<&'static str>::default();
-
-    let x = tree.insert("x");
-    let x0 = x.attach("x0", &mut tree).unwrap();
-    let x1 = x.attach("x1", &mut tree).unwrap();
-    let x1_0 = x1.attach("x1_0", &mut tree).unwrap();
-    let _xx = tree.insert("xx");
-    let x1_1 = x1.attach("x1_1", &mut tree).unwrap();
+    let mut tree: Tree<&'static str> = tree! {
+        "x0",
+        "x1", {
+            "x1-0",
+            "x1-1", {
+                "x1-1-0",
+                "x1-1-1",
+                "x1-1-2",
+            },
+            "x1-2",
+        },
+        "x2",
+    };
 
     let expected = r##"
-x
-  x0
-  x1
-    x1_0
-    x1_1
-xx
+x0
+x1
+  x1-0
+  x1-1
+    x1-1-0
+    x1-1-1
+    x1-1-2
+  x1-2
+x2
 "##;
 
     self::test_tree_traverse(tree.traverse_root_nodes(), expected);
 
-    tree.bind(x1).unwrap().remove();
-    assert_eq!(tree.data(x), Some(&"x"));
-    assert_eq!(tree.data(x0), Some(&"x0"));
-    assert_eq!(tree.data(x1), None);
-    assert_eq!(tree.data(x1_0), None);
-    assert_eq!(tree.data(x1_1), None);
+    let mut nodes = tree.root_nodes_mut();
+    nodes.next();
+    nodes
+        .bind()
+        .unwrap()
+        .children()
+        .nth(1)
+        .unwrap()
+        .remove_children();
+    drop(nodes);
 
     let expected = r##"
-x
-  x0
-xx
+x0
+x1
+  x1-0
+  x1-1
+  x1-2
+x2
 "##;
     self::test_tree_traverse(tree.traverse_root_nodes(), expected);
-    self::test_tree_traverse(tree.traverse(x), expected);
 }
 
 // --------------------------------------------------------------------------------

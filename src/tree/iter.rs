@@ -92,6 +92,7 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct SiblingsNext<'a, T, D = (), G: Gen = DefaultGen> {
+    /// Can be `None`
     pub(crate) next: Option<Slot>,
     #[derivative(Debug = "ignore")]
     pub(crate) tree: &'a Tree<T, D, G>,
