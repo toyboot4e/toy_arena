@@ -12,6 +12,7 @@
 :no-5: https://github.com/toyboot4e/toy_arena/issues/5[#5]
 :ego-tree: https://docs.rs/ego-tree/latest/ego_tree/[ego_tree]
 :indextere: https://docs.rs/indextree/latest/indextree/[indextree]
+:hecs: https://github.com/Ralith/hecs[hecs]
 
 {toy-arena} is a generational arena for my game development.
 
@@ -63,7 +64,7 @@ It puts most of siblings/children linkinig APIs in `NodeId`. `parent.append(chil
 +
 I'll follow {indextree} so that `toy_arena::tree` is a bit similar to the arena's API. Also, I don't want an explicit root node as a user actually.
 
-I also tried adding GitHub actions. Does `cargo +nightly miri test` run?
+I also tried adding GitHub actions. Does `cargo +nightly miri test` run? → No. So I copied some of the CI file in {hecs}.
 
 * Aug 25, 2021
 +

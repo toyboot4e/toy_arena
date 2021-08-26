@@ -15,6 +15,9 @@ WARNING: This module **definitely** needs more tests!
 pub mod iter;
 pub mod iter_mut;
 
+mod link;
+use link::Link;
+
 // The `tree!` macro is defined in this module but exported at the crate root (unfortunatelly)
 #[doc(inline)]
 pub use crate::tree;
@@ -69,7 +72,7 @@ could use an explicit root node, where `parent` of `Node` is always there (if it
 pub struct Tree<T, D = (), G: Gen = DefaultGen> {
     nodes: NodeArena<T, D, G>,
     /// Corresponds to the implicit root
-    root: ChildLink,
+    root: Link,
 }
 
 /// Opaque tree node index
@@ -82,85 +85,7 @@ pub struct Tree<T, D = (), G: Gen = DefaultGen> {
 )]
 pub struct Node<T> {
     token: T,
-    slink: SiblingsLink,
-    clink: ChildLink,
-    /// `None` refers to the implicit root node. Parent handle is needed when removing the node
-    /// later.
-    parent: Option<Slot>,
-}
-
-/// Doubly linked list indices for siblings
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-struct SiblingsLink {
-    // TODO use a nonmax type for slots
-    /// Next sibling
-    next: Option<Slot>,
-    /// Previous sibling
-    prev: Option<Slot>,
-}
-
-/// Indices for referring to children. NOTE: The first and last fields must not overlap.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-struct ChildLink {
-    first: Option<Slot>,
-    last: Option<Slot>,
-}
-
-impl SiblingsLink {
-    /// Fixes siblings link on removal. NOTE: It doesn't mutate the removed node's sibling links!
-    pub fn on_remove<T, D, G: Gen>(self, tree: &mut Tree<T, D, G>) {
-        if let Some(prev) = self.prev {
-            let prev = tree.nodes.get_mut_by_slot(prev).unwrap();
-            prev.slink.next = self.next;
-        }
-        if let Some(next) = self.next {
-            let next = tree.nodes.get_mut_by_slot(next).unwrap();
-            next.slink.prev = self.prev;
-        }
-    }
-}
-
-impl ChildLink {
-    pub fn has_any(&self) -> bool {
-        self.first.is_some() || self.last.is_some()
-    }
-
-    /// Fixes parent/child link on leaf node removal
-    pub fn on_remove_leaf<T, D, G: Gen>(self, child_slot: Slot, tree: &mut Tree<T, D, G>) {
-        // NOTE: The first and last fields must not overlap.
-        debug_assert!(self.first != self.last);
-
-        // Fix the parent-child link
-        if let Some(first_slot) = self.first {
-            if first_slot == child_slot {
-                let first_node = tree.node_by_slot(first_slot).unwrap();
-                debug_assert!(first_node.slink.prev.is_none());
-
-                if let Some(second_slot) = first_node.slink.next {
-                    let second_node = tree.node_mut_by_slot(second_slot).unwrap();
-                    debug_assert!(second_node.slink.prev == Some(first_slot));
-                    second_node.slink.prev = None;
-                }
-
-                return;
-            }
-        }
-
-        if let Some(last_slot) = self.last {
-            if last_slot == child_slot {
-                let last_node = tree.node_by_slot(last_slot).unwrap();
-                debug_assert!(last_node.slink.next.is_none());
-
-                if let Some(before_last_slot) = last_node.slink.prev {
-                    let before_last_node = tree.node_mut_by_slot(before_last_slot).unwrap();
-                    debug_assert!(before_last_node.slink.next == Some(last_slot));
-                    before_last_node.slink.next = None;
-                }
-
-                return;
-            }
-        }
-    }
+    link: Link,
 }
 
 pub(crate) fn on_insert_to_implicit_root<T, D, G: Gen>(
@@ -168,43 +93,67 @@ pub(crate) fn on_insert_to_implicit_root<T, D, G: Gen>(
     tree: &mut Tree<T, D, G>,
 ) {
     // linking
-    if tree.root.first.is_none() {
-        tree.root.first = Some(id.slot());
+    if tree.root.first_child().is_none() {
+        tree.root.set_first_child(Some(id.slot()));
     } else {
         // NOTE: The first and last fields must not overlap.
-        debug_assert_ne!(tree.root.first, tree.root.last);
+        debug_assert_ne!(tree.root.first_child(), tree.root.last_child());
 
-        if let Some(last_slot) = tree.root.last.or(tree.root.first) {
+        if let Some(last_slot) = tree.root.last_child().or(tree.root.first_child()) {
             let last_node = tree.node_mut_by_slot(last_slot).unwrap();
-            debug_assert!(last_node.slink.next.is_none());
-            last_node.slink.next = Some(id.slot);
+            debug_assert!(last_node.link.next_sibling().is_none());
+            last_node.link.set_next_sibling(Some(id.slot));
             let node = tree.node_mut_by_slot(id.slot).unwrap();
-            node.slink.prev = Some(last_slot);
+            node.link.set_prev_sibling(Some(last_slot));
         }
 
-        tree.root.last = Some(id.slot());
+        tree.root.set_last_child(Some(id.slot()));
     }
 }
 
 impl<T> Node<T> {
+    fn from_parent(token: T, parent: Slot) -> Self {
+        Self {
+            token,
+            link: Link::with_parent(parent),
+        }
+    }
+
+    fn root(token: T) -> Self {
+        Self {
+            token,
+            link: Link::default(),
+        }
+    }
+
     pub fn parent_slot(&self) -> Option<Slot> {
-        self.parent
+        self.link.parent()
     }
 
     pub fn next_sibling_slot(self) -> Option<Slot> {
-        self.slink.next
+        self.link.next_sibling()
     }
 
     pub fn prev_sibling_slot(self) -> Option<Slot> {
-        self.slink.prev
+        self.link.prev_sibling()
     }
 
     pub fn first_child_slot(self) -> Option<Slot> {
-        self.clink.first
+        self.link.first_child()
     }
 
     pub fn last_child_slot(self) -> Option<Slot> {
-        self.clink.last
+        self.link.last_child()
+    }
+
+    /// Returns reference to the internal data
+    pub fn data(&self) -> &T {
+        &self.token
+    }
+
+    /// Returns mutable reference to the internal data
+    pub fn data_mut(&mut self) -> &mut T {
+        &mut self.token
     }
 }
 
@@ -222,7 +171,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             nodes: NodeArena::with_capacity(cap),
-            root: Default::default(),
+            root: Link::default(),
         }
     }
 
@@ -315,7 +264,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     pub fn traverse_root_nodes(&self) -> iter::Traverse<T, D, G> {
         let mut states = vec![];
         states.push(iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
-            next: self.root.first,
+            next: self.root.first_child(),
             tree: self,
         }));
         iter::Traverse { tree: self, states }
@@ -327,7 +276,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     /// Sub trees rooted at siblings after this node (depth-first, preorder)
     pub fn siblings(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
         let states = vec![iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
-            next: self.node(id).and_then(|n| n.slink.next),
+            next: self.node(id).and_then(|n| n.link.next_sibling()),
             tree: self,
         })];
         iter::Traverse { tree: self, states }
@@ -335,7 +284,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 
     /// Children (depth-first, preorder)
     pub fn children(&mut self, id: NodeId<T, D, G>) -> iter::SiblingsNext<T, D, G> {
-        let first = self.node(id).and_then(|node| node.clink.first);
+        let first = self.node(id).and_then(|node| node.link.first_child());
         iter::SiblingsNext {
             next: first,
             tree: self,
@@ -344,21 +293,21 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 
     /// Returns iterator of child node bindings
     pub fn children_mut(&mut self, id: NodeId<T, D, G>) -> iter_mut::SiblingsMutNext<T, D, G> {
-        let first = self.node(id).and_then(|node| node.clink.first);
+        let first = self.node(id).and_then(|node| node.link.first_child());
         let bind = iter_mut::TreeBind::new(self);
         iter_mut::SiblingsMutNext { bind, next: first }
     }
 
     pub fn root_nodes(&self) -> iter::SiblingsNext<T, D, G> {
         iter::SiblingsNext {
-            next: self.root.first,
+            next: self.root.first_child(),
             tree: self,
         }
     }
 
     /// Returns iterator of child node bindings
     pub fn root_nodes_mut(&mut self) -> iter_mut::SiblingsMutNext<T, D, G> {
-        let first = self.root.first;
+        let first = self.root.first_child();
         let bind = iter_mut::TreeBind::new(self);
         iter_mut::SiblingsMutNext { bind, next: first }
     }
@@ -377,36 +326,6 @@ impl<T, D, G: Gen> ops::IndexMut<NodeId<T, D, G>> for Tree<T, D, G> {
     }
 }
 
-impl<T> Node<T> {
-    fn from_parent(token: T, parent: Slot) -> Self {
-        Self {
-            token,
-            clink: Default::default(),
-            slink: Default::default(),
-            parent: Some(parent),
-        }
-    }
-
-    fn root(token: T) -> Self {
-        Self {
-            token,
-            clink: Default::default(),
-            slink: Default::default(),
-            parent: None,
-        }
-    }
-
-    /// Returns reference to the internal data
-    pub fn data(&self) -> &T {
-        &self.token
-    }
-
-    /// Returns mutable reference to the internal data
-    pub fn data_mut(&mut self) -> &mut T {
-        &mut self.token
-    }
-}
-
 /// # ---- Tree node impls -----
 impl<T, D, G: Gen> NodeId<T, D, G> {
     /// Attaches a child to the node
@@ -421,22 +340,22 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
 
         // siblings link
         let self_node = tree.node_mut(self).unwrap();
-        if let Some(last_slot) = self_node.clink.last.or(self_node.clink.first) {
+        if let Some(last_slot) = self_node.link.last_child().or(self_node.link.first_child()) {
             let (last_node, child_node) =
                 tree.nodes.get2_mut_by_slot(last_slot, child_slot).unwrap();
-            debug_assert!(last_node.slink.next.is_none());
-            last_node.slink.next = Some(child_slot);
-            child_node.slink.prev = Some(last_slot);
+            debug_assert!(last_node.link.next_sibling().is_none());
+            last_node.link.set_next_sibling(Some(child_slot));
+            child_node.link.set_prev_sibling(Some(last_slot));
         }
 
         // parent -> child link
         let self_node = tree.node_mut(self).unwrap();
 
-        if self_node.clink.first.is_none() {
-            debug_assert!(self_node.clink.last.is_none());
-            self_node.clink.first = Some(child_slot);
+        if self_node.link.first_child().is_none() {
+            debug_assert!(self_node.link.last_child().is_none());
+            self_node.link.set_first_child(Some(child_slot));
         } else {
-            self_node.clink.last = Some(child_slot);
+            self_node.link.set_last_child(Some(child_slot));
         }
 
         Some(child_id)

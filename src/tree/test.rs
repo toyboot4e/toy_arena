@@ -99,7 +99,7 @@ fn tree_remove() {
     let x0 = x.attach("x0", &mut tree).unwrap();
     let x1 = x.attach("x1", &mut tree).unwrap();
     let x1_0 = x1.attach("x1_0", &mut tree).unwrap();
-    let xx = tree.insert("xx");
+    let _xx = tree.insert("xx");
     let x1_1 = x1.attach("x1_1", &mut tree).unwrap();
 
     let expected = r##"
@@ -111,7 +111,6 @@ x
 xx
 "##;
 
-    println!("{:#?}", tree);
     self::test_tree_traverse(tree.traverse_root_nodes(), expected);
 
     tree.bind(x1).unwrap().remove();
@@ -134,25 +133,25 @@ xx
 // utilities
 
 fn test_tree_manual_walk<'a, T: Display + Debug, D, G: Gen>(
-    preorder: impl Iterator<Item = NodeRef<'a, T, D, G>>,
+    siblings: impl Iterator<Item = NodeRef<'a, T, D, G>>,
     expected: &str,
 ) where
     T: 'a,
     D: 'a,
 {
     let mut buf = String::new();
-    on_children(&mut buf, 0, preorder);
+    on_children(&mut buf, 0, siblings);
     assert_eq!(buf.trim(), expected.trim());
 
     fn on_children<'a, T: Display + Debug, D, G: Gen>(
         buf: &mut String,
         indent: usize,
-        preorder: impl Iterator<Item = NodeRef<'a, T, D, G>>,
+        siblings: impl Iterator<Item = NodeRef<'a, T, D, G>>,
     ) where
         T: 'a,
         D: 'a,
     {
-        for node in preorder {
+        for node in siblings {
             writeln!(buf, "{}{}", "  ".repeat(indent), node.data()).unwrap();
             on_children(buf, indent + 1, node.children())
         }

@@ -226,7 +226,7 @@ impl Slot {
 /**
 Generation type, one of the unsized `NonZero` types in [`std::num`]
 
-Generation of a first item of a slot is always `1` (since it's using `NonZero` type and we'll
+Generation of the first item at a slot is always `2` (since it's using `NonZero` type and we'll
 always increase the generation on creating new value).
 */
 pub trait Gen: Debug + Clone + Copy + PartialEq + Eq + Hash + 'static {

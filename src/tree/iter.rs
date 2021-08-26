@@ -14,9 +14,10 @@ macro_rules! validate_slot {
     ($tree:expr, $slot:expr) => {{
         let entry = $tree.nodes.entries.get($slot.to_usize()).unwrap();
         let node = entry.data.as_ref().unwrap();
-        if node.clink.first.is_some() || node.clink.last.is_some() {
+        if node.link.has_any_child() {
             assert_ne!(
-                node.clink.first, node.clink.last,
+                node.link.first_child(),
+                node.link.last_child(),
                 "bug: first/last child must not be the same node"
             );
         }
@@ -60,7 +61,7 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
     /// Nodes after this node
     pub fn siblings(&self) -> SiblingsNext<'a, T, D, G> {
         SiblingsNext {
-            next: self.node().slink.next,
+            next: self.node().link.next_sibling(),
             tree: self.tree,
         }
     }
@@ -75,7 +76,7 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
 
     pub fn children(&self) -> SiblingsNext<'a, T, D, G> {
         SiblingsNext {
-            next: self.node().clink.first,
+            next: self.node().link.first_child(),
             // we know
             tree: self.tree,
         }
@@ -105,7 +106,7 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
             .nodes
             .get_by_slot(next)
             .expect("bug: invalid `next`");
-        self.next = next_node.slink.next;
+        self.next = next_node.link.next_sibling();
         Some(NodeRef::new(next, self.tree))
     }
 }
@@ -165,7 +166,7 @@ impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
 
                     self.states.pop();
                     // siblings of the child
-                    self.push_siblings_of_first_chilld(&node);
+                    self.push_siblings_of_first_child(&node);
                     // children of the child
                     self.maybe_push_children(&node);
                     TraverseItem::Child(node)
@@ -202,19 +203,19 @@ impl<'a, T, D, G: Gen> iter::FusedIterator for Traverse<'a, T, D, G> {}
 
 impl<'a, T, D, G: Gen> Traverse<'a, T, D, G> {
     fn maybe_push_children(&mut self, node: &Node<T>) {
-        if let Some(child) = node.clink.first {
+        if let Some(child) = node.link.first_child() {
             self.states.push(TraverseState::FirstChild(NodeRef {
                 tree: self.tree,
                 slot: child,
             }));
         } else {
-            debug_assert!(node.clink.last.is_none());
+            debug_assert!(node.link.last_child().is_none());
         }
     }
 
-    fn push_siblings_of_first_chilld(&mut self, node: &Node<T>) {
+    fn push_siblings_of_first_child(&mut self, node: &Node<T>) {
         let siblings = SiblingsNext {
-            next: node.slink.next.clone(),
+            next: node.link.next_sibling(),
             tree: self.tree,
         };
         self.states.push(TraverseState::NonFirstChildren(siblings));
