@@ -68,19 +68,19 @@ impl Link {
         self.clink.last
     }
 
-    pub(crate) fn set_next_sibling(&mut self, next: Option<Slot>) {
+    fn set_next_sibling(&mut self, next: Option<Slot>) {
         self.slink.next = next;
     }
 
-    pub(crate) fn set_prev_sibling(&mut self, prev: Option<Slot>) {
+    fn set_prev_sibling(&mut self, prev: Option<Slot>) {
         self.slink.prev = prev;
     }
 
-    pub(crate) fn set_first_child(&mut self, first: Option<Slot>) {
+    fn set_first_child(&mut self, first: Option<Slot>) {
         self.clink.first = first;
     }
 
-    pub(crate) fn set_last_child(&mut self, last: Option<Slot>) {
+    fn set_last_child(&mut self, last: Option<Slot>) {
         self.clink.last = last;
     }
 }
@@ -157,5 +157,32 @@ pub(crate) fn fix_children_on_remove_leaf<T, D, G: Gen>(
 
             return;
         }
+    }
+}
+
+pub(crate) fn fix_on_attach<T, D, G: Gen>(
+    parent_id: NodeId<T, D, G>,
+    child_id: NodeId<T, D, G>,
+    tree: &mut Tree<T, D, G>,
+) {
+    let child_slot = child_id.slot();
+
+    // siblings link
+    let self_node = tree.node_mut(parent_id).unwrap();
+    if let Some(last_slot) = self_node.link.last_child().or(self_node.link.first_child()) {
+        let (last_node, child_node) = tree.nodes.get2_mut_by_slot(last_slot, child_slot).unwrap();
+        debug_assert!(last_node.link.next_sibling().is_none());
+        last_node.link.set_next_sibling(Some(child_slot));
+        child_node.link.set_prev_sibling(Some(last_slot));
+    }
+
+    // parent -> child link
+    let parent_node = tree.node_mut(parent_id).unwrap();
+
+    if parent_node.link.first_child().is_none() {
+        debug_assert!(parent_node.link.last_child().is_none());
+        parent_node.link.set_first_child(Some(child_slot));
+    } else {
+        parent_node.link.set_last_child(Some(child_slot));
     }
 }

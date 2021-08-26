@@ -313,28 +313,7 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
 
         let child_node = Node::from_parent(child, self.slot);
         let child_id = tree.nodes.insert(child_node);
-        let child_slot = child_id.slot();
-
-        // siblings link
-        let self_node = tree.node_mut(self).unwrap();
-        if let Some(last_slot) = self_node.link.last_child().or(self_node.link.first_child()) {
-            let (last_node, child_node) =
-                tree.nodes.get2_mut_by_slot(last_slot, child_slot).unwrap();
-            debug_assert!(last_node.link.next_sibling().is_none());
-            last_node.link.set_next_sibling(Some(child_slot));
-            child_node.link.set_prev_sibling(Some(last_slot));
-        }
-
-        // parent -> child link
-        let self_node = tree.node_mut(self).unwrap();
-
-        if self_node.link.first_child().is_none() {
-            debug_assert!(self_node.link.last_child().is_none());
-            self_node.link.set_first_child(Some(child_slot));
-        } else {
-            self_node.link.set_last_child(Some(child_slot));
-        }
-
+        link::fix_on_attach(self, child_id, tree);
         Some(child_id)
     }
 }
