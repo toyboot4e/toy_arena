@@ -189,12 +189,12 @@ impl<T, D, G: Gen> Tree<T, D, G> {
         self.nodes.get_mut_by_slot(slot)
     }
 
-    /// Returns reference to the data in a node
+    /// Returns reference to the data in the node
     pub fn data(&self, id: NodeId<T, D, G>) -> Option<&T> {
         self.nodes.get(id).map(Node::data)
     }
 
-    /// Returns mutable reference to the data in a node
+    /// Returns mutable reference to the data in the node
     pub fn data_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut T> {
         self.nodes.get_mut(id).map(Node::data_mut)
     }
@@ -207,8 +207,11 @@ impl<T, D, G: Gen> Tree<T, D, G> {
         link::fix_root_on_insert(self, id);
         id
     }
+}
 
-    /// Mutablly binds a node. Most mutation should happen here
+/// # ----- Binding -----
+impl<T, D, G: Gen> Tree<T, D, G> {
+    /// Binds a node mutably. Most mutation should happen here!
     pub fn bind<'a>(&'a mut self, id: NodeId<T, D, G>) -> Option<iter_mut::NodeMut<'a, T, D, G>> {
         if !self.nodes.contains(id) {
             None

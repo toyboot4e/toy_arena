@@ -146,6 +146,7 @@ pub struct Index<T, D = (), G: Gen = DefaultGen> {
     _d: PhantomData<fn() -> D>,
 }
 
+/// # ---- Common impls -----
 impl<T, D, G: Gen> Index<T, D, G> {
     fn new(slot: Slot, gen: G) -> Self {
         Self {
