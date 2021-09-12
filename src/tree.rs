@@ -18,28 +18,19 @@ pub mod iter_mut;
 mod link;
 use link::Link;
 
+#[cfg(test)]
+mod test;
+
+#[cfg(feature = "igri")]
+use igri::Inspect;
+
 // The `tree!` macro is defined in this module but exported at the crate root (unfortunatelly)
 #[doc(inline)]
 pub use crate::tree;
 
-/// [`Tree`] without generations
-pub type VecTree<T, D> = Tree<T, D, ()>;
-
-impl Gen for () {
-    fn default_gen() -> Self {
-        ()
-    }
-    fn next(&mut self) -> Self {
-        ()
-    }
-}
-
 // just for doc link
 #[allow(unused)]
 use crate::Index;
-
-#[cfg(test)]
-mod test;
 
 pub use iter::TraverseItem;
 
@@ -53,6 +44,18 @@ use crate::{DefaultGen, Gen, Slot};
 pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T>, D, G>;
 
 type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
+
+/// [`Tree`] without generations
+pub type VecTree<T, D> = Tree<T, D, ()>;
+
+impl Gen for () {
+    fn default_gen() -> Self {
+        ()
+    }
+    fn next(&mut self) -> Self {
+        ()
+    }
+}
 
 /**
 Tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting methods.
@@ -69,10 +72,23 @@ could use an explicit root node, where `parent` of `Node` is always there (if it
     Eq(bound = "T: PartialEq"),
     Hash(bound = "T: Hash")
 )]
+#[cfg_attr(
+    feature = "igri",
+    derive(Inspect),
+    inspect(with = "inspect_tree", bounds = "T: Inspect")
+)]
 pub struct Tree<T, D = (), G: Gen = DefaultGen> {
     nodes: NodeArena<T, D, G>,
     /// Corresponds to the implicit root
     root: Link,
+}
+
+#[cfg(feature = "igri")]
+fn inspect_tree<'a, T, D, G: Gen>(tree: &'a mut Tree<T, D, G>, ui: &igri::imgui::Ui, label: &str)
+where
+    T: igri::Inspect,
+{
+    crate::inspect_arena(&mut tree.nodes, ui, label);
 }
 
 /// Opaque tree node index
@@ -83,9 +99,22 @@ pub struct Tree<T, D = (), G: Gen = DefaultGen> {
     Eq(bound = "T: Eq"),
     Hash(bound = "T: Hash")
 )]
+#[cfg_attr(
+    feature = "igri",
+    derive(Inspect),
+    inspect(with = "inspect_node", bounds = "T: Inspect")
+)]
 pub struct Node<T> {
     token: T,
     link: Link,
+}
+
+#[cfg(feature = "igri")]
+fn inspect_node<'a, T>(node: &mut Node<T>, ui: &igri::imgui::Ui, label: &str)
+where
+    T: igri::Inspect,
+{
+    node.token.inspect(ui, label);
 }
 
 impl<T> Node<T> {

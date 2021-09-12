@@ -31,6 +31,9 @@ use std::{
     ops::{self, DerefMut},
 };
 
+#[cfg(feature = "igri")]
+use igri::Inspect;
+
 use derivative::Derivative;
 
 use crate::iter::*;
@@ -59,6 +62,11 @@ See also: [`crate::iter`].
     Eq(bound = "T: Eq"),
     Hash(bound = "T: Hash")
 )]
+#[cfg_attr(
+    feature = "igri",
+    derive(Inspect),
+    inspect(with = "inspect_arena", bounds = "T: Inspect")
+)]
 pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
     /// Can be shared by the arena and a mutable iterator
@@ -71,7 +79,14 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
     /// Distinct type parameter
     #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
     _distinct: PhantomData<fn() -> D>,
-    // _distinct: PhantomData<*const D>,
+}
+
+#[cfg(feature = "igri")]
+fn inspect_arena<'a, T, D, G: Gen>(arena: &'a mut Arena<T, D, G>, ui: &igri::imgui::Ui, label: &str)
+where
+    T: igri::Inspect,
+{
+    igri::seq(arena.entries.iter_mut().map(|e| &mut e.data), ui, label);
 }
 
 fn hash_unsafe_cell<T: Hash, H: std::hash::Hasher>(x: &UnsafeCell<T>, state: &mut H) {
@@ -174,6 +189,7 @@ prefer mutable iterators to slot-based iteration.
 
 */
 #[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "igri", derive(Inspect))]
 #[repr(transparent)]
 pub struct Slot {
     raw: RawSlot,
