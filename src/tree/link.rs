@@ -1,133 +1,160 @@
 /*!
-Link of parent/child and siblings
-
-All mutation to the link is defined in this file.
+Link of tree node IDs
 */
 
-// TODO use a nonmax type for slots
+use std::fmt;
 
-use crate::{
-    tree::{NodeId, Tree},
-    Gen, Slot,
-};
+pub trait Tree {
+    /// usize or small size
+    type Slot: Default + Clone + PartialEq + fmt::Debug;
 
+    /// Slot with generation
+    type Id: Id<Self::Slot> + Clone + fmt::Debug;
+
+    fn root_mut(&mut self) -> &mut Link<Self::Slot>;
+
+    fn link_mut_by_slot(&mut self, slot: Self::Slot) -> Option<&mut Link<Self::Slot>>;
+
+    fn link2_mut_by_slot(
+        &mut self,
+        s0: Self::Slot,
+        s1: Self::Slot,
+    ) -> Option<(&mut Link<Self::Slot>, &mut Link<Self::Slot>)>;
+
+    fn link_mut_by_id(&mut self, id: Self::Id) -> Option<&mut Link<Self::Slot>>;
+}
+
+pub trait Id<S> {
+    fn slot(&self) -> S;
+}
+
+/// Container-agnostic index link of a tree
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub(crate) struct Link {
-    slink: SiblingsLink,
-    clink: ChildLink,
-    parent: Option<Slot>,
+pub struct Link<S> {
+    slink: SiblingsLink<S>,
+    clink: ChildLink<S>,
+    parent: Option<S>,
 }
 
 /// Doubly linked list indices for siblings
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-struct SiblingsLink {
+struct SiblingsLink<S> {
     /// Next sibling
-    next: Option<Slot>,
+    next: Option<S>,
     /// Previous sibling
-    prev: Option<Slot>,
+    prev: Option<S>,
 }
 
 /// Indices for referring to children. NOTE: The first and last fields must not overlap.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-struct ChildLink {
-    first: Option<Slot>,
-    last: Option<Slot>,
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+struct ChildLink<S> {
+    first: Option<S>,
+    last: Option<S>,
 }
 
-impl Link {
-    pub fn with_parent(parent: Slot) -> Self {
+impl<S: Clone> Link<S> {
+    pub fn with_parent(parent: S) -> Self
+    where
+        S: Default,
+    {
         Self {
             parent: Some(parent),
             ..Default::default()
         }
     }
 
-    pub fn parent(&self) -> Option<Slot> {
-        self.parent
+    pub fn parent(&self) -> Option<S> {
+        self.parent.clone()
     }
 
-    pub fn set_parent(&mut self, parent: Option<Slot>) {
+    pub fn set_parent(&mut self, parent: Option<S>) {
         self.parent = parent;
     }
 
-    pub fn next_sibling(&self) -> Option<Slot> {
-        self.slink.next
+    pub fn next_sibling(&self) -> Option<S> {
+        self.slink.next.clone()
     }
 
-    pub fn prev_sibling(&self) -> Option<Slot> {
-        self.slink.prev
+    pub fn prev_sibling(&self) -> Option<S> {
+        self.slink.prev.clone()
     }
 
     pub fn has_any_child(&self) -> bool {
         self.clink.first.is_some() || self.clink.last.is_some()
     }
 
-    pub fn first_child(&self) -> Option<Slot> {
-        self.clink.first
+    pub fn first_child(&self) -> Option<S> {
+        self.clink.first.clone()
     }
 
-    pub fn last_child(&self) -> Option<Slot> {
-        self.clink.last
+    pub fn last_child(&self) -> Option<S> {
+        self.clink.last.clone()
     }
 
-    fn set_next_sibling(&mut self, next: Option<Slot>) {
+    fn set_next_sibling(&mut self, next: Option<S>) {
         self.slink.next = next;
     }
 
-    fn set_prev_sibling(&mut self, prev: Option<Slot>) {
+    fn set_prev_sibling(&mut self, prev: Option<S>) {
         self.slink.prev = prev;
     }
 
-    fn set_first_child(&mut self, first: Option<Slot>) {
+    fn set_first_child(&mut self, first: Option<S>) {
         self.clink.first = first;
     }
 
-    fn set_last_child(&mut self, last: Option<Slot>) {
+    fn set_last_child(&mut self, last: Option<S>) {
         self.clink.last = last;
     }
 }
 
-pub(crate) fn fix_siblings_on_remove<T, D, G: Gen>(link: &Link, tree: &mut Tree<T, D, G>) {
+pub fn fix_siblings_on_remove<T: Tree>(link: &Link<T::Slot>, tree: &mut T) {
     let slink = &link.slink;
-    if let Some(prev) = slink.prev {
-        let prev_node = tree.nodes.get_mut_by_slot(prev).unwrap();
-        prev_node.link.set_next_sibling(slink.next);
+
+    if let Some(prev) = slink.prev.clone() {
+        let prev_link = tree.link_mut_by_slot(prev.clone()).unwrap();
+        prev_link.set_next_sibling(slink.next.clone());
     }
-    if let Some(next) = slink.next {
-        let next_node = tree.nodes.get_mut_by_slot(next).unwrap();
-        next_node.link.set_prev_sibling(slink.prev);
+
+    if let Some(next) = slink.next.clone() {
+        let next_link = tree.link_mut_by_slot(next.clone()).unwrap();
+        next_link.set_prev_sibling(slink.prev.clone());
     }
 }
 
-/// On `Tree:insert`
-pub(crate) fn fix_root_on_insert<T, D, G: Gen>(tree: &mut Tree<T, D, G>, id: NodeId<T, D, G>) {
-    if tree.root.first_child().is_none() {
-        tree.root.set_first_child(Some(id.slot()));
+/// On tree node insertion
+pub fn fix_root_on_insert<T: Tree>(tree: &mut T, id: T::Id) {
+    let root = tree.root_mut();
+
+    if root.first_child().is_none() {
+        root.set_first_child(Some(id.slot()));
     } else {
         // NOTE: The first and last fields must not overlap.
-        debug_assert_ne!(tree.root.first_child(), tree.root.last_child());
+        debug_assert_ne!(root.first_child(), root.last_child());
 
-        if let Some(last_slot) = tree.root.last_child().or(tree.root.first_child()) {
-            let last_node = tree.node_mut_by_slot(last_slot).unwrap();
-            debug_assert!(last_node.link.next_sibling().is_none());
-            last_node.link.set_next_sibling(Some(id.slot));
-            let node = tree.node_mut_by_slot(id.slot).unwrap();
-            node.link.set_prev_sibling(Some(last_slot));
+        if let Some(last_slot) = root.last_child().or(root.first_child()) {
+            drop(root);
+
+            let last_link = tree.link_mut_by_slot(last_slot.clone()).unwrap();
+            debug_assert!(last_link.next_sibling().is_none());
+            last_link.set_next_sibling(Some(id.slot()));
+            let link = tree.link_mut_by_slot(id.slot()).unwrap();
+            link.set_prev_sibling(Some(last_slot.clone()));
         }
 
-        tree.root.set_last_child(Some(id.slot()));
+        tree.root_mut().set_last_child(Some(id.slot()));
     }
 }
 
-pub(crate) fn fix_after_clean_children(link: &mut Link) {
+pub fn fix_after_clean_children<S: Default>(link: &mut Link<S>) {
     link.clink = Default::default();
 }
 
 /// Fixes parent/child link on leaf node removal
-pub(crate) fn fix_children_on_remove_leaf<T, D, G: Gen>(
-    link: &Link,
-    child_slot: Slot,
-    tree: &mut Tree<T, D, G>,
+pub(crate) fn fix_children_on_remove_leaf<T: Tree>(
+    link: &Link<T::Slot>,
+    child_slot: T::Slot,
+    tree: &mut T,
 ) {
     let clink = &link.clink;
 
@@ -135,30 +162,30 @@ pub(crate) fn fix_children_on_remove_leaf<T, D, G: Gen>(
     debug_assert_ne!(clink.first, clink.last);
 
     // Fix the parent-child link
-    if let Some(first_slot) = clink.first {
+    if let Some(first_slot) = clink.first.clone() {
         if first_slot == child_slot {
-            let first_node = tree.node_by_slot(first_slot).unwrap();
-            debug_assert!(first_node.link.prev_sibling().is_none());
+            let first_link = tree.link_mut_by_slot(first_slot.clone()).unwrap();
+            debug_assert!(first_link.prev_sibling().is_none());
 
-            if let Some(second_slot) = first_node.link.next_sibling() {
-                let second_node = tree.node_mut_by_slot(second_slot).unwrap();
-                debug_assert!(second_node.link.prev_sibling() == Some(first_slot));
-                second_node.link.set_prev_sibling(None);
+            if let Some(second_slot) = first_link.next_sibling() {
+                let second_link = tree.link_mut_by_slot(second_slot).unwrap();
+                debug_assert!(second_link.prev_sibling() == Some(first_slot.clone()));
+                second_link.set_prev_sibling(None);
             }
 
             return;
         }
     }
 
-    if let Some(last_slot) = clink.last {
+    if let Some(last_slot) = clink.last.clone() {
         if last_slot == child_slot {
-            let last_node = tree.node_by_slot(last_slot).unwrap();
-            debug_assert!(last_node.link.next_sibling().is_none());
+            let last_link = tree.link_mut_by_slot(last_slot.clone()).unwrap();
+            debug_assert!(last_link.next_sibling().is_none());
 
-            if let Some(before_last_slot) = last_node.link.prev_sibling() {
-                let before_last_node = tree.node_mut_by_slot(before_last_slot).unwrap();
-                debug_assert!(before_last_node.link.next_sibling() == Some(last_slot));
-                before_last_node.link.set_next_sibling(None);
+            if let Some(before_last_slot) = last_link.prev_sibling() {
+                let before_last_link = tree.link_mut_by_slot(before_last_slot).unwrap();
+                debug_assert!(before_last_link.next_sibling() == Some(last_slot.clone()));
+                before_last_link.set_next_sibling(None);
             }
 
             return;
@@ -166,29 +193,27 @@ pub(crate) fn fix_children_on_remove_leaf<T, D, G: Gen>(
     }
 }
 
-pub(crate) fn fix_on_attach<T, D, G: Gen>(
-    parent_id: NodeId<T, D, G>,
-    child_id: NodeId<T, D, G>,
-    tree: &mut Tree<T, D, G>,
-) {
+pub fn fix_on_attach<T: Tree>(parent_id: T::Id, child_id: T::Id, tree: &mut T) {
     let child_slot = child_id.slot();
 
     // siblings link
-    let self_node = tree.node_mut(parent_id).unwrap();
-    if let Some(last_slot) = self_node.link.last_child().or(self_node.link.first_child()) {
-        let (last_node, child_node) = tree.nodes.get2_mut_by_slot(last_slot, child_slot).unwrap();
-        debug_assert!(last_node.link.next_sibling().is_none());
-        last_node.link.set_next_sibling(Some(child_slot));
-        child_node.link.set_prev_sibling(Some(last_slot));
+    let self_link = tree.link_mut_by_id(parent_id.clone()).unwrap();
+    if let Some(last_slot) = self_link.last_child().or(self_link.first_child()) {
+        let (last_link, child_link) = tree
+            .link2_mut_by_slot(last_slot.clone(), child_slot.clone())
+            .unwrap();
+        debug_assert!(last_link.next_sibling().is_none());
+        last_link.set_next_sibling(Some(child_slot.clone()));
+        child_link.set_prev_sibling(Some(last_slot));
     }
 
     // parent -> child link
-    let parent_node = tree.node_mut(parent_id).unwrap();
+    let parent_link = tree.link_mut_by_id(parent_id.clone()).unwrap();
 
-    if parent_node.link.first_child().is_none() {
-        debug_assert!(parent_node.link.last_child().is_none());
-        parent_node.link.set_first_child(Some(child_slot));
+    if parent_link.first_child().is_none() {
+        debug_assert!(parent_link.last_child().is_none());
+        parent_link.set_first_child(Some(child_slot.clone()));
     } else {
-        parent_node.link.set_last_child(Some(child_slot));
+        parent_link.set_last_child(Some(child_slot.clone()));
     }
 }

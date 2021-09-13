@@ -152,6 +152,11 @@ assert_eq!(
 */
 #[derive(Derivative)]
 #[derivative(Copy, Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "igri",
+    derive(Inspect),
+    inspect(bounds = "", with = "inspect_index")
+)]
 pub struct Index<T, D = (), G: Gen = DefaultGen> {
     slot: Slot,
     gen: G,
@@ -159,6 +164,15 @@ pub struct Index<T, D = (), G: Gen = DefaultGen> {
     _t: PhantomData<fn() -> T>,
     /// Distinct type parameter
     _d: PhantomData<fn() -> D>,
+}
+
+#[cfg(feature = "igri")]
+fn inspect_index<'a, T, D, G: Gen>(
+    index: &'a mut Index<T, D, G>,
+    ui: &igri::imgui::Ui,
+    label: &str,
+) {
+    index.slot.inspect(ui, label);
 }
 
 /// # ---- Common impls -----

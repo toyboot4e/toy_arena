@@ -83,21 +83,21 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         tree.nodes.upgrade(self.slot).unwrap()
     }
 
-    unsafe fn node(&self) -> &Node<T> {
+    unsafe fn node(&self) -> &Node<T, D, G> {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
-    unsafe fn node_mut(&self) -> &mut Node<T> {
+    unsafe fn node_mut(&self) -> &mut Node<T, D, G> {
         let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.get_mut_by_slot(self.slot).unwrap()
     }
 
-    unsafe fn link(&self) -> &Link {
+    unsafe fn link(&self) -> &Link<Slot> {
         &self.node().link
     }
 
-    unsafe fn link_mut(&mut self) -> &mut Link {
+    unsafe fn link_mut(&mut self) -> &mut Link<Slot> {
         &mut self.node_mut().link
     }
 

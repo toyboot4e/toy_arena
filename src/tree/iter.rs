@@ -50,7 +50,7 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
         self.tree.nodes.upgrade(self.slot).unwrap()
     }
 
-    pub(crate) fn node(&self) -> &'a Node<T> {
+    pub(crate) fn node(&self) -> &'a Node<T, D, G> {
         self.tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
@@ -118,10 +118,10 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
 /// Return value of [`Traverse::next`]
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-pub enum TraverseItem<'a, T> {
+pub enum TraverseItem<'a, T, D, G: Gen> {
     /// Sibling or rooted node
-    Node(&'a Node<T>),
-    Child(&'a Node<T>),
+    Node(&'a Node<T, D, G>),
+    Child(&'a Node<T, D, G>),
     // add parent index?
     EndChildren,
 }
@@ -148,7 +148,7 @@ pub(crate) enum TraverseState<'a, T, D = (), G: Gen = DefaultGen> {
 }
 
 impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
-    type Item = TraverseItem<'a, T>;
+    type Item = TraverseItem<'a, T, D, G>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -203,7 +203,7 @@ impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
 impl<'a, T, D, G: Gen> iter::FusedIterator for Traverse<'a, T, D, G> {}
 
 impl<'a, T, D, G: Gen> Traverse<'a, T, D, G> {
-    fn maybe_push_children(&mut self, node: &Node<T>) {
+    fn maybe_push_children(&mut self, node: &Node<T, D, G>) {
         if let Some(child) = node.link.first_child() {
             self.states.push(TraverseState::FirstChild(NodeRef {
                 tree: self.tree,
@@ -214,7 +214,7 @@ impl<'a, T, D, G: Gen> Traverse<'a, T, D, G> {
         }
     }
 
-    fn push_siblings_of_first_child(&mut self, node: &Node<T>) {
+    fn push_siblings_of_first_child(&mut self, node: &Node<T, D, G>) {
         let siblings = SiblingsNext {
             next: node.link.next_sibling(),
             tree: self.tree,

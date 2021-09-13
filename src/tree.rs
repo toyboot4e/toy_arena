@@ -21,29 +21,29 @@ use link::Link;
 #[cfg(test)]
 mod test;
 
-#[cfg(feature = "igri")]
-use igri::Inspect;
-
 // The `tree!` macro is defined in this module but exported at the crate root (unfortunatelly)
 #[doc(inline)]
 pub use crate::tree;
+
+pub use iter::TraverseItem;
 
 // just for doc link
 #[allow(unused)]
 use crate::Index;
 
-pub use iter::TraverseItem;
-
-use std::{fmt::Debug, hash::Hash, ops};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData, ops};
 
 use derivative::Derivative;
+
+#[cfg(feature = "igri")]
+use igri::Inspect;
 
 use crate::{DefaultGen, Gen, Slot};
 
 /// Tree node index with parenting API
-pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T>, D, G>;
+pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T, D, G>, D, G>;
 
-type NodeArena<T, D, G> = crate::Arena<Node<T>, D, G>;
+type NodeArena<T, D, G> = crate::Arena<Node<T, D, G>, D, G>;
 
 /// [`Tree`] without generations
 pub type VecTree<T, D> = Tree<T, D, ()>;
@@ -80,7 +80,40 @@ could use an explicit root node, where `parent` of `Node` is always there (if it
 pub struct Tree<T, D = (), G: Gen = DefaultGen> {
     nodes: NodeArena<T, D, G>,
     /// Corresponds to the implicit root
-    root: Link,
+    root: Link<Slot>,
+}
+
+impl<T, D, G: Gen> link::Id<Slot> for NodeId<T, D, G> {
+    fn slot(&self) -> Slot {
+        self.slot
+    }
+}
+
+impl<T, D, G: Gen> link::Tree for Tree<T, D, G> {
+    type Slot = Slot;
+    type Id = NodeId<T, D, G>;
+
+    fn root_mut(&mut self) -> &mut Link<Self::Slot> {
+        &mut self.root
+    }
+
+    fn link_mut_by_slot(&mut self, slot: Self::Slot) -> Option<&mut Link<Self::Slot>> {
+        self.nodes.get_mut_by_slot(slot).map(|n| &mut n.link)
+    }
+
+    fn link2_mut_by_slot(
+        &mut self,
+        s0: Self::Slot,
+        s1: Self::Slot,
+    ) -> Option<(&mut Link<Self::Slot>, &mut Link<Self::Slot>)> {
+        self.nodes
+            .get2_mut_by_slot(s0, s1)
+            .map(|(n0, n1)| (&mut n0.link, &mut n1.link))
+    }
+
+    fn link_mut_by_id(&mut self, id: Self::Id) -> Option<&mut Link<Self::Slot>> {
+        self.nodes.get_mut(id).map(|n| &mut n.link)
+    }
 }
 
 #[cfg(feature = "igri")]
@@ -104,24 +137,28 @@ where
     derive(Inspect),
     inspect(with = "inspect_node", bounds = "T: Inspect")
 )]
-pub struct Node<T> {
+pub struct Node<T, D = (), G: Gen = DefaultGen> {
     token: T,
-    link: Link,
+    link: Link<Slot>,
+    _d: PhantomData<fn() -> D>,
+    _g: PhantomData<fn() -> G>,
 }
 
 #[cfg(feature = "igri")]
-fn inspect_node<'a, T>(node: &mut Node<T>, ui: &igri::imgui::Ui, label: &str)
+fn inspect_node<'a, T, D, G: Gen>(node: &mut Node<T, D, G>, ui: &igri::imgui::Ui, label: &str)
 where
     T: igri::Inspect,
 {
     node.token.inspect(ui, label);
 }
 
-impl<T> Node<T> {
+impl<T, D, G: Gen> Node<T, D, G> {
     fn from_parent(token: T, parent: Slot) -> Self {
         Self {
             token,
             link: Link::with_parent(parent),
+            _d: PhantomData,
+            _g: PhantomData,
         }
     }
 
@@ -129,6 +166,8 @@ impl<T> Node<T> {
         Self {
             token,
             link: Link::default(),
+            _d: PhantomData,
+            _g: PhantomData,
         }
     }
 
@@ -199,22 +238,22 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 /// # ----- Node accessors -----
 impl<T, D, G: Gen> Tree<T, D, G> {
     /// Returns a reference to the node
-    pub fn node(&self, id: NodeId<T, D, G>) -> Option<&Node<T>> {
+    pub fn node(&self, id: NodeId<T, D, G>) -> Option<&Node<T, D, G>> {
         self.nodes.get(id)
     }
 
     /// Returns a mutable reference to the node
-    pub fn node_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T>> {
+    pub fn node_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T, D, G>> {
         self.nodes.get_mut(id)
     }
 
     /// Returns a reference to the node
-    pub fn node_by_slot(&self, slot: Slot) -> Option<&Node<T>> {
+    pub fn node_by_slot(&self, slot: Slot) -> Option<&Node<T, D, G>> {
         self.nodes.get_by_slot(slot)
     }
 
     /// Returns a mutable reference to the node
-    pub fn node_mut_by_slot(&mut self, slot: Slot) -> Option<&mut Node<T>> {
+    pub fn node_mut_by_slot(&mut self, slot: Slot) -> Option<&mut Node<T, D, G>> {
         self.nodes.get_mut_by_slot(slot)
     }
 
@@ -323,7 +362,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 }
 
 impl<T, D, G: Gen> ops::Index<NodeId<T, D, G>> for Tree<T, D, G> {
-    type Output = Node<T>;
+    type Output = Node<T, D, G>;
     fn index(&self, id: NodeId<T, D, G>) -> &Self::Output {
         self.node(id).unwrap()
     }
