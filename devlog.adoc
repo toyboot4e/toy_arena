@@ -12,6 +12,7 @@
 :no-5: https://github.com/toyboot4e/toy_arena/issues/5[#5]
 :ego-tree: https://docs.rs/ego-tree/latest/ego_tree/[ego_tree]
 :indextere: https://docs.rs/indextree/latest/indextree/[indextree]
+:hecs: https://github.com/Ralith/hecs[hecs]
 
 {toy-arena} is a generational arena for my game development.
 
@@ -63,5 +64,30 @@ It puts most of siblings/children linkinig APIs in `NodeId`. `parent.append(chil
 +
 I'll follow {indextree} so that `toy_arena::tree` is a bit similar to the arena's API. Also, I don't want an explicit root node as a user actually.
 
-I also tried adding GitHub actions. Does `cargo +nightly miri test` run?
+I also tried adding GitHub actions. Does `cargo +nightly miri test` run? → No. So I copied some of the CI file in {hecs}.
+
+* Aug 25, 2021
++
+I added `tree!` macro. The implementation is a bit mess, and debugging was hard, but soon got it!:
++
+[source,rust]
+----
+let tree: Tree<usize> = tree! {
+    0,
+    1, {
+        10,
+        11, {
+            100,
+            101,
+        },
+        12,
+    },
+};
+----
++
+Tips:
+* Use https://doc.rust-lang.org/beta/unstable-book/library-features/trace-macros.html[trace_macros] for debugging
+* Use `$crate` https://doc.rust-lang.org/reference/macros-by-example.html#hygiene[hygiene]
+* Match to `{ .. }` first (with earlier rules) and then `tt` s (in later rules)
+* https://rust-lang.github.io/rfcs/3086-macro-metavar-expr.html[3086-macro-metavar-expr - The Rust RFC Book] I've never given it a try though!
 

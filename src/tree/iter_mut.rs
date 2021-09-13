@@ -1,5 +1,5 @@
 /*!
-Iterators of mutable bindings of tree nodes
+Iterators of mutable bindings of the [`Tree`] nodes
 */
 
 use std::{cell::UnsafeCell, mem, rc::Rc};
@@ -78,91 +78,138 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         }
     }
 
-    /// # Safety
-    /// FIXME: Panics if the data is removed/invaldated.
     pub fn id(&self) -> NodeId<T, D, G> {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.upgrade(self.slot).unwrap()
     }
 
-    /// # Safety
-    /// FIXME: Panics if the data is removed/invaldated.
-    unsafe fn node(&self) -> &Node<T> {
+    unsafe fn node(&self) -> &Node<T, D, G> {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
-    /// # Safety
-    /// FIXME: Panics if the data is removed/invaldated.
-    unsafe fn node_mut(&self) -> &mut Node<T> {
+    unsafe fn node_mut(&self) -> &mut Node<T, D, G> {
         let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.get_mut_by_slot(self.slot).unwrap()
     }
 
-    /// # Safety
-    /// FIXME: Panics if the data is removed/invaldated.
+    unsafe fn link(&self) -> &Link<Slot> {
+        &self.node().link
+    }
+
+    unsafe fn link_mut(&mut self) -> &mut Link<Slot> {
+        &mut self.node_mut().link
+    }
+
     pub fn data(&self) -> &T {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.get_by_slot(self.slot).unwrap().data()
     }
 
-    /// # Safety
-    /// FIXME: Panics if the data is removed/invaldated.
     pub fn data_mut(&mut self) -> &mut T {
         let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.get_mut_by_slot(self.slot).unwrap().data_mut()
     }
 
-    /// Removes subtree rooted by this node
-    // TODO: make use of util in one place
-    pub fn remove(&mut self) {
-        let node = unsafe { self.node() };
-        let slink = node.slink.clone();
-        let parent = node.parent.clone();
-        drop(node);
+    pub fn next_sibling(&mut self) -> Option<Self> {
+        let next = unsafe { self.link().next_sibling()? };
+        Some(Self {
+            bind: self.bind.clone(),
+            slot: next,
+        })
+    }
 
-        // parent
-        {
-            let tree = unsafe { self.bind.tree_mut() };
-            let clink = if let Some(parent) = parent {
-                let parent = tree.node_mut_by_slot(parent).unwrap();
-                parent.clink.clone()
-            } else {
-                tree.root.clone()
-            };
-            clink.remove(tree, self.slot);
+    pub fn prev_sibling(&mut self) -> Option<Self> {
+        let next = unsafe { self.link().next_sibling()? };
+        Some(Self {
+            bind: self.bind.clone(),
+            slot: next,
+        })
+    }
+
+    /// Goes back to the first sibling
+    pub fn first_sibling(&mut self) -> Option<Self> {
+        let mut slot = self.slot;
+
+        while let Some(next) = unsafe { self.link().prev_sibling() } {
+            slot = next;
         }
 
-        // children
-        self.remove_rec();
+        Some(Self {
+            bind: self.bind.clone(),
+            slot,
+        })
+    }
 
-        // Fix the siblnig link
-        if let Some(prev) = slink.prev {
-            let tree = unsafe { self.bind.tree_mut() };
-            let prev = tree.nodes.get_mut_by_slot(prev).unwrap();
-            prev.slink.next = slink.next;
+    /// Goes forward to the last sibling
+    pub fn last_sibling(&mut self) -> Option<Self> {
+        let mut slot = self.slot;
+
+        while let Some(next) = unsafe { self.link().next_sibling() } {
+            slot = next;
         }
-        if let Some(next) = slink.next {
-            let tree = unsafe { self.bind.tree_mut() };
-            let next = tree.nodes.get_mut_by_slot(next).unwrap();
-            next.slink.prev = slink.prev;
+
+        Some(Self {
+            bind: self.bind.clone(),
+            slot,
+        })
+    }
+
+    pub fn children(&mut self) -> SiblingsMutNext<'a, T, D, G> {
+        let next = unsafe { self.link().first_child() };
+        SiblingsMutNext {
+            bind: self.bind.clone(),
+            next,
         }
     }
 
-    fn remove_rec(&mut self) {
+    pub fn remove_children(&mut self) {
         for mut child in self.children_mut() {
-            child.remove_rec();
+            child.remove_children_rec();
         }
-        // remove this node
+        unsafe {
+            link::fix_after_clean_children(self.link_mut());
+        }
+    }
+
+    fn remove_children_rec(&mut self) {
+        for mut child in self.children_mut() {
+            child.remove_children();
+        }
+        // Invalidate this child node WITHOUT fixing the parent-child link
         let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.remove_by_slot(self.slot);
+    }
+
+    /// Removes subtree rooted by this node
+    // NOTE: It doesn't mutate the node's siblings link!
+    pub fn remove(mut self) {
+        let link = unsafe { self.link().clone() };
+
+        // Fix parent-child link
+        {
+            let tree = unsafe { self.bind.tree_mut() };
+            let parent_link = if let Some(parent) = link.parent() {
+                let parent = tree.node_by_slot(parent).unwrap();
+                parent.link.clone()
+            } else {
+                tree.root.clone()
+            };
+            link::fix_children_on_remove_leaf(&parent_link, self.slot, tree);
+        }
+
+        // Remove children
+        self.remove_children();
+
+        // Fix the siblnig link, but keeping the target node's link
+        // so that the link can be used by the iterator
+        let tree = unsafe { self.bind.tree_mut() };
+        link::fix_siblings_on_remove(&link, tree);
     }
 }
 
 /// # ---- Iterators ----
 impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
-    // TODO: add immutable iterators
-
     /// This node and nodes after this node
     pub fn traverse_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
         SiblingsMutNext {
@@ -175,7 +222,7 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     pub fn siblings_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
-            next: unsafe { self.node().slink.next },
+            next: unsafe { self.link().next_sibling() },
         }
     }
 
@@ -191,7 +238,7 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     pub fn children_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
-            next: unsafe { self.node().clink.first },
+            next: unsafe { self.link().first_child() },
         }
     }
 }
@@ -202,13 +249,25 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
 // - Implement automatic iterator
 
 /// Iterator that walks through siblings
-// TODO: directon type parameter
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 pub struct SiblingsMutNext<'a, T, D = (), G: Gen = DefaultGen> {
     #[derivative(Debug = "ignore")]
     pub(crate) bind: TreeBind<'a, T, D, G>,
     pub(crate) next: Option<Slot>,
+}
+
+impl<'a, T, D, G: Gen> SiblingsMutNext<'a, T, D, G> {
+    pub fn bind(&mut self) -> Option<NodeMut<'a, T, D, G>> {
+        if let Some(slot) = self.next {
+            Some(NodeMut {
+                bind: self.bind.clone(),
+                slot,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl<'a, T, D, G: Gen> Iterator for SiblingsMutNext<'a, T, D, G> {
@@ -219,8 +278,8 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsMutNext<'a, T, D, G> {
         self.next = {
             let tree = unsafe { self.bind.tree() };
             let next_node = tree.nodes.get_by_slot(next).unwrap();
-            debug_assert_ne!(self.next, next_node.slink.next);
-            next_node.slink.next
+            debug_assert_ne!(self.next, next_node.link.next_sibling());
+            next_node.link.next_sibling()
         };
 
         Some(NodeMut {
