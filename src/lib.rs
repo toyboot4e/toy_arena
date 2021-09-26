@@ -86,7 +86,14 @@ fn inspect_arena<'a, T, D, G: Gen>(arena: &'a mut Arena<T, D, G>, ui: &igri::img
 where
     T: igri::Inspect,
 {
-    igri::seq(arena.entries.iter_mut().map(|e| &mut e.data), ui, label);
+    igri::seq_indexed(
+        arena.entries.iter_mut().enumerate().filter_map(|(i, e)| {
+            let data = e.data.as_mut()?;
+            Some((i, data))
+        }),
+        ui,
+        label,
+    );
 }
 
 fn hash_unsafe_cell<T: Hash, H: std::hash::Hasher>(x: &UnsafeCell<T>, state: &mut H) {

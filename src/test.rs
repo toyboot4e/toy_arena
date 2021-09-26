@@ -144,3 +144,15 @@ fn gen_macro() {
     arena2.insert(100);
     assert_eq!(arena, arena2);
 }
+
+#[cfg(feature = "igri")]
+#[test]
+fn igri_derive() {
+    use igri::Inspect;
+
+    #[derive(Inspect)]
+    pub struct X {
+        arena: crate::Arena<u32>,
+        tree: crate::tree::Tree<u32>,
+    }
+}
