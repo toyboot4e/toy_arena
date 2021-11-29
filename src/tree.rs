@@ -384,7 +384,7 @@ impl<T, D, G: Gen> NodeId<T, D, G> {
 
         let child_node = Node::from_parent(child, self.slot);
         let child_id = tree.nodes.insert(child_node);
-        link::fix_on_attach(self, child_id, tree);
+        link::fix_on_attach_child(self, child_id, tree);
         Some(child_id)
     }
 }
@@ -412,7 +412,7 @@ let tree: Tree<usize> = tree! {
 macro_rules! tree {
     ($($x:tt),* $(,)?) => {{
         let mut tree = $crate::tree::Tree::new();
-        tree!(@ tree, $($x),*);
+        $crate::tree::tree!(@ tree, $($x),*);
         tree
     }};
 
@@ -429,7 +429,7 @@ macro_rules! tree {
     (@ $tree:expr, $data:expr, { $($cs:tt),* $(,)? } $(,)?) => {
         {
             let parent = $tree.insert($data);
-            tree!(@@ $tree, parent, $($cs),*);
+            $crate::tree::tree!(@@ $tree, parent, $($cs),*);
         }
     };
 
@@ -437,9 +437,9 @@ macro_rules! tree {
     (@ $tree:expr, $data:expr, { $($cs:tt),* $(,)? }, $($rest:tt),* $(,)?) => {
         {
             let parent = $tree.insert($data);
-            tree!(@@ $tree, parent, $($cs),*);
+            $crate::tree::tree!(@@ $tree, parent, $($cs),*);
         }
-        tree!(@ $tree, $($rest),*);
+        $crate::tree::tree!(@ $tree, $($rest),*);
     };
 
     // leaf
@@ -450,7 +450,7 @@ macro_rules! tree {
     // leaf + rest
     (@ $tree:expr, $l:expr, $($rest:tt),+ $(,)?) => {
         $tree.insert($l);
-        tree!(@ $tree, $($rest),*);
+        $crate::tree::tree!(@ $tree, $($rest),*);
     };
 
     // ---------- PARENT ----------
@@ -463,7 +463,7 @@ macro_rules! tree {
     (@@ $tree:expr, $p:expr, $c:expr, { $($cs:tt),* $(,)? } $(,)?) => {
         {
             let parent = $c.attach($c, &mut $tree).unwrap();
-            tree!(@@ $tree, parent, $($cs),*);
+            $crate::tree::tree!(@@ $tree, parent, $($cs),*);
         }
     };
 
@@ -471,9 +471,9 @@ macro_rules! tree {
     (@@ $tree:expr, $p:expr, $c:expr, { $($cs:tt),* $(,)? }, $($rest:tt)* $(,)?) => {
         {
             let parent = $p.attach($c, &mut $tree).unwrap();
-            tree!(@@ $tree, parent, $($cs),*);
+            $crate::tree::tree!(@@ $tree, parent, $($cs),*);
         }
-        tree!(@@ $tree, $p, $($rest),*);
+        $crate::tree::tree!(@@ $tree, $p, $($rest),*);
     };
 
     // leaf
@@ -484,6 +484,6 @@ macro_rules! tree {
     // leaf + rest
     (@@ $tree:expr, $p:expr, $l:expr, $($rest:tt),* $(,)?) => {
         $p.attach($l, &mut $tree).unwrap();
-        tree!(@@ $tree, $p, $($rest),*);
+        $crate::tree::tree!(@@ $tree, $p, $($rest),*);
     };
 }

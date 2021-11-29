@@ -193,7 +193,7 @@ pub(crate) fn fix_children_on_remove_leaf<T: Tree>(
     }
 }
 
-pub fn fix_on_attach<T: Tree>(parent_id: T::Id, child_id: T::Id, tree: &mut T) {
+pub fn fix_on_attach_child<T: Tree>(parent_id: T::Id, child_id: T::Id, tree: &mut T) {
     let child_slot = child_id.slot();
 
     // siblings link

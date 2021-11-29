@@ -11,8 +11,6 @@ use std::fmt::{Debug, Display, Write};
 
 #[test]
 fn tree_macro_test() {
-    use crate::tree;
-
     let tree: Tree<usize> = tree! {
         0,
         1, {
