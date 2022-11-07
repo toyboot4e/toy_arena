@@ -7,20 +7,19 @@ use std::fmt::{Debug, Display, Write};
 // --------------------------------------------------------------------------------
 // iter.rs
 
-// trace_macros!(true);
-
 #[test]
 fn tree_macro_test() {
     let tree: Tree<usize> = tree! {
         0,
-        1, {
+        1 => [
             10,
-            11, {
+            11 => [
                 100,
                 101,
-            },
+            ],
             12,
-        },
+        ],
+        2,
     };
 
     let expected = r##"
@@ -31,6 +30,7 @@ fn tree_macro_test() {
     100
     101
   12
+2
 "##;
 
     self::test_tree_manual_walk(tree.root_nodes(), expected);
@@ -93,15 +93,15 @@ x0
 fn tree_remove() {
     let mut tree: Tree<&'static str> = tree! {
         "x0",
-        "x1", {
+        "x1" => [
             "x1-0",
-            "x1-1", {
+            "x1-1" => [
                 "x1-1-0",
                 "x1-1-1",
                 "x1-1-2",
-            },
+            ],
             "x1-2",
-        },
+        ],
         "x2",
     };
 

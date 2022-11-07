@@ -397,93 +397,55 @@ use toy_arena::{tree, tree::Tree};
 
 let tree: Tree<usize> = tree! {
     0,
-    1, {
+    1=> [
         10,
-        11, {
+        11=> [
             100,
             101,
-        },
+        ],
         12,
-    },
+    ],
 };
 ```
 */
 #[macro_export]
 macro_rules! tree {
-    ($($x:tt),* $(,)?) => {{
-        let mut tree = $crate::tree::Tree::new();
-        $crate::tree::tree!(@ tree, $($x),*);
+    // with implicit parent (implicit root node)
+    (@ $tree:expr, $new_parent:expr => [ $( $children:tt )* ] $($rest:tt)* ) => {{
+        let new_parent = $tree.insert($new_parent);
+        $crate::tree::tree!(@@ $tree, new_parent, $( $children )* );
+        $crate::tree::tree!(@ $tree, $( $rest )*);
+    }};
+    (@ $tree:expr, $x:expr, $( $rest:tt )*) => {
+        $tree.insert($x);
+        $crate::tree::tree!(@ $tree, $( $rest )*);
+    };
+    (@ $tree:expr, , $( $rest:tt )*) => {
+        // REMARK: This is for the `$( $rest:tt )*`
+        $crate::tree::tree!(@ $tree, $( $rest )* );
+    };
+    (@ $tree:expr, $(,)?) => { /* stop */ };
+
+    // with explicit parent
+    (@@ $tree:expr, $parent:expr, $new_parent:expr => [ $( $children:tt )* ] $( $rest:tt )* ) => {{
+        let new_parent = $parent.attach($new_parent, $tree).unwrap();
+        $crate::tree::tree!(@@ $tree, new_parent, $( $children )* );
+        $crate::tree::tree!(@@ $tree, $parent, $( $rest )* );
+    }};
+    (@@ $tree:expr, $parent:expr, $x:expr, $( $rest:tt )* ) => {
+        $parent.attach($x, $tree);
+        $crate::tree::tree!(@@ $tree, $parent, $( $rest )* );
+    };
+    (@@ $tree:expr, $parent:expr, , $( $rest:tt )* ) => {
+        // REMARK: This is for the `$( $rest:tt )*`
+        $crate::tree::tree!(@@ $tree, $parent, $( $rest )* );
+    };
+    (@@ $tree:expr, $parent:expr, ) => { /* stop */ };
+
+    // entry point
+    ( $( $xs:tt )* ) => {{
+        let mut tree = $crate::tree::Tree::default();
+        $crate::tree::tree!(@ (&mut tree), $( $xs )* );
         tree
     }};
-
-    // base pattern
-    (@ $tree:expr $(,)?) => {
-    };
-
-    // ---------- ROOT ----------
-    // We don't haveparent node yet
-
-    // NOTE: Be sure to match `{ .. } ` in early rules and `tt` in later rules
-
-    // root
-    (@ $tree:expr, $data:expr, { $($cs:tt),* $(,)? } $(,)?) => {
-        {
-            let parent = $tree.insert($data);
-            $crate::tree::tree!(@@ $tree, parent, $($cs),*);
-        }
-    };
-
-    // root + rest
-    (@ $tree:expr, $data:expr, { $($cs:tt),* $(,)? }, $($rest:tt),* $(,)?) => {
-        {
-            let parent = $tree.insert($data);
-            $crate::tree::tree!(@@ $tree, parent, $($cs),*);
-        }
-        $crate::tree::tree!(@ $tree, $($rest),*);
-    };
-
-    // leaf
-    (@ $tree:expr, $l:expr $(,)?) => {
-        $tree.insert($l);
-    };
-
-    // leaf + rest
-    (@ $tree:expr, $l:expr, $($rest:tt),+ $(,)?) => {
-        $tree.insert($l);
-        $crate::tree::tree!(@ $tree, $($rest),*);
-    };
-
-    // ---------- PARENT ----------
-    // We have parent node index `$p`
-
-    // base
-    (@@ $tree:expr, $p:expr $(,)?) => {};
-
-    // root
-    (@@ $tree:expr, $p:expr, $c:expr, { $($cs:tt),* $(,)? } $(,)?) => {
-        {
-            let parent = $c.attach($c, &mut $tree).unwrap();
-            $crate::tree::tree!(@@ $tree, parent, $($cs),*);
-        }
-    };
-
-    // root + rest
-    (@@ $tree:expr, $p:expr, $c:expr, { $($cs:tt),* $(,)? }, $($rest:tt)* $(,)?) => {
-        {
-            let parent = $p.attach($c, &mut $tree).unwrap();
-            $crate::tree::tree!(@@ $tree, parent, $($cs),*);
-        }
-        $crate::tree::tree!(@@ $tree, $p, $($rest),*);
-    };
-
-    // leaf
-    (@@ $tree:expr, $p:expr, $l:expr $(,)?) => {
-        $p.attach($l, &mut $tree).unwrap();
-    };
-
-    // leaf + rest
-    (@@ $tree:expr, $p:expr, $l:expr, $($rest:tt),* $(,)?) => {
-        $p.attach($l, &mut $tree).unwrap();
-        $crate::tree::tree!(@@ $tree, $p, $($rest),*);
-    };
 }
