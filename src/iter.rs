@@ -8,12 +8,12 @@ entries.
 use crate::*;
 
 /// [`Arena::drain`] → Iterator of `T`. Removes all arena items on drop
-pub struct Drain<'a, T, D, G: Gen> {
-    pub(crate) arena: &'a mut Arena<T, D, G>,
+pub struct Drain<'a, T, G: Gen> {
+    pub(crate) arena: &'a mut Arena<T, G>,
     pub(crate) slot: Slot,
 }
 
-impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
+impl<'a, T, G: Gen> Iterator for Drain<'a, T, G> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         while (self.slot.raw as usize) < self.arena.entries.len() {
@@ -38,10 +38,10 @@ impl<'a, T, D, G: Gen> Iterator for Drain<'a, T, D, G> {
     }
 }
 
-impl<'a, T, D, G: Gen> FusedIterator for Drain<'a, T, D, G> {}
-impl<'a, T, D, G: Gen> ExactSizeIterator for Drain<'a, T, D, G> {}
+impl<'a, T, G: Gen> FusedIterator for Drain<'a, T, G> {}
+impl<'a, T, G: Gen> ExactSizeIterator for Drain<'a, T, G> {}
 
-impl<'a, T, D, G: Gen> Drop for Drain<'a, T, D, G> {
+impl<'a, T, G: Gen> Drop for Drain<'a, T, G> {
     // Continue iterating/dropping if there are any elements left.
     fn drop(&mut self) {
         self.for_each(drop);
@@ -137,14 +137,14 @@ macro_rules! impl_indexed_iter {
         impl_indexed_iter!(
             $name,
             $borrow,
-            |entry: &mut $name<'a, T, D, G>| entry.next(),
-            |entry: &mut $name<'a, T, D, G>| entry.next_back()
+            |entry: &mut $name<'a, T, G>| entry.next(),
+            |entry: &mut $name<'a, T, G>| entry.next_back()
         );
     };
 
     ($name:ident, $borrow:ident, $next:expr, $next_back:expr) => {
-        impl<'a, T, D, G: Gen> Iterator for $name<'a, T, D, G> {
-            type Item = (Index<T, D, G>, borrow!($borrow 'a T));
+        impl<'a, T, G: Gen> Iterator for $name<'a, T, G> {
+            type Item = (Index<T, G>, borrow!($borrow 'a T));
             fn next(&mut self) -> Option<Self::Item> {
                 impl_indexed_iter!(self, $borrow, $next)
             }
@@ -155,14 +155,14 @@ macro_rules! impl_indexed_iter {
             }
         }
 
-        impl<'a, T, D, G: Gen> DoubleEndedIterator for $name<'a, T, D, G> {
+        impl<'a, T, G: Gen> DoubleEndedIterator for $name<'a, T, G> {
             fn next_back(&mut self) -> Option<Self::Item> {
                 impl_indexed_iter!(self, $borrow, $next_back)
             }
         }
 
-        impl<'a, T, D, G: Gen> FusedIterator for $name<'a, T, D, G> {}
-        impl<'a, T, D, G: Gen> ExactSizeIterator for $name<'a, T, D, G> {}
+        impl<'a, T, G: Gen> FusedIterator for $name<'a, T, G> {}
+        impl<'a, T, G: Gen> ExactSizeIterator for $name<'a, T, G> {}
     };
 
     ($me:expr, $borrow:ident, $next:expr) => {{
@@ -183,21 +183,19 @@ macro_rules! impl_indexed_iter {
 }
 
 /// [`Arena::iter`] → Iterator of `(Index, &T)`
-pub struct IndexedItemIter<'a, T, D, G: Gen> {
+pub struct IndexedItemIter<'a, T, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::Iter<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
     pub(crate) n_visited: usize,
-    pub(crate) _distinct: PhantomData<fn() -> D>,
 }
 
 impl_indexed_iter!(IndexedItemIter, ref);
 
 /// [`Arena::iter_mut`] → Iterator of `(Index, &mut T)`
-pub struct IndexedItemIterMut<'a, T, D, G: Gen> {
+pub struct IndexedItemIterMut<'a, T, G: Gen> {
     pub(crate) entries: Enumerate<std::slice::IterMut<'a, Entry<T, G>>>,
     pub(crate) n_items: usize,
     pub(crate) n_visited: usize,
-    pub(crate) _distinct: PhantomData<fn() -> D>,
 }
 
 impl_indexed_iter!(IndexedItemIterMut, mut);
@@ -206,14 +204,14 @@ macro_rules! impl_binds {
     ($name:ident) => {
         impl_binds!(
             $name,
-            |me: &mut $name<'a, T, D, G>| me.entries.next(),
-            |me: &mut $name<'a, T, D, G>| me.entries.next_back()
+            |me: &mut $name<'a, T, G>| me.entries.next(),
+            |me: &mut $name<'a, T, G>| me.entries.next_back()
         );
     };
 
     ($name:ident, $next:expr, $next_back:expr) => {
-        impl<'a, T, D, G: Gen> Iterator for $name<'a, T, D, G> {
-            type Item = EntryBind<'a, T, D, G>;
+        impl<'a, T, G: Gen> Iterator for $name<'a, T, G> {
+            type Item = EntryBind<'a, T, G>;
             fn next(&mut self) -> Option<Self::Item> {
                 impl_binds!(self, $next)
             }
@@ -224,14 +222,14 @@ macro_rules! impl_binds {
             }
         }
 
-        impl<'a, T, D, G: Gen> DoubleEndedIterator for $name<'a, T, D, G> {
+        impl<'a, T, G: Gen> DoubleEndedIterator for $name<'a, T, G> {
             fn next_back(&mut self) -> Option<Self::Item> {
                 impl_binds!(self, $next_back)
             }
         }
 
-        impl<'a, T, D, G: Gen> FusedIterator for $name<'a, T, D, G> {}
-        impl<'a, T, D, G: Gen> ExactSizeIterator for $name<'a, T, D, G> {}
+        impl<'a, T, G: Gen> FusedIterator for $name<'a, T, G> {}
+        impl<'a, T, G: Gen> ExactSizeIterator for $name<'a, T, G> {}
     };
 
     ($me:expr, $next:expr) => {{
@@ -255,17 +253,16 @@ macro_rules! impl_binds {
 }
 
 /// [`Arena::bindings`] → Iterator of [`EntryBind`]
-pub struct EntryBindings<'a, T, D, G: Gen> {
+pub struct EntryBindings<'a, T, G: Gen> {
     entries: Enumerate<std::slice::IterMut<'a, Entry<T, G>>>,
     slot_states: &'a mut UnsafeCell<SlotStates>,
     //
     n_items: usize,
     n_visited: usize,
-    _distinct: PhantomData<fn() -> D>,
 }
 
-impl<'a, T, D, G: Gen> EntryBindings<'a, T, D, G> {
-    pub(crate) fn new(arena: &'a mut Arena<T, D, G>) -> Self {
+impl<'a, T, G: Gen> EntryBindings<'a, T, G> {
+    pub(crate) fn new(arena: &'a mut Arena<T, G>) -> Self {
         // safety: no mutable alias
         let n_items = arena.slot_states.get_mut().n_items.into();
         Self {
@@ -274,7 +271,6 @@ impl<'a, T, D, G: Gen> EntryBindings<'a, T, D, G> {
             //
             n_items,
             n_visited: 0,
-            _distinct: PhantomData,
         }
     }
 }
@@ -282,13 +278,13 @@ impl<'a, T, D, G: Gen> EntryBindings<'a, T, D, G> {
 impl_binds!(EntryBindings);
 
 /// Mutable access to an arena entry
-pub struct EntryBind<'a, T, D, G: Gen> {
+pub struct EntryBind<'a, T, G: Gen> {
     entry: &'a mut Entry<T, G>,
     slot_states: *mut SlotStates,
-    index: Index<T, D, G>,
+    index: Index<T, G>,
 }
 
-impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
+impl<'a, T, G: Gen> EntryBind<'a, T, G> {
     /// # Safety
     /// Panics if the data is removed/invaldated.
     pub fn get(&self) -> &T {
@@ -301,11 +297,11 @@ impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
         self.entry.data.as_mut().unwrap()
     }
 
-    pub fn index(&self) -> Index<T, D, G> {
+    pub fn index(&self) -> Index<T, G> {
         self.index
     }
 
-    pub fn invalidate(self) -> Option<Index<T, D, G>> {
+    pub fn invalidate(self) -> Option<Index<T, G>> {
         crate::invalidate(self.entry, unsafe { &mut *self.slot_states }, self.index)
     }
 
@@ -314,6 +310,6 @@ impl<'a, T, D, G: Gen> EntryBind<'a, T, D, G> {
     }
 
     pub fn replace(self, new: T) {
-        crate::replace_binded::<T, D, G>(self.entry, self.index.slot, new);
+        crate::replace_binded::<T, G>(self.entry, self.index.slot, new);
     }
 }

@@ -41,12 +41,12 @@ use igri::Inspect;
 use crate::{DefaultGen, Gen, Slot};
 
 /// Tree node index with parenting API
-pub type NodeId<T, D = (), G = DefaultGen> = crate::Index<Node<T, D, G>, D, G>;
+pub type NodeId<T, G = DefaultGen> = crate::Index<Node<T, G>, G>;
 
-type NodeArena<T, D, G> = crate::Arena<Node<T, D, G>, D, G>;
+type NodeArena<T, G> = crate::Arena<Node<T, G>, G>;
 
 /// [`Tree`] without generations
-pub type VecTree<T, D> = Tree<T, D, ()>;
+pub type VecTree<T, G> = Tree<T, G>;
 
 impl Gen for () {
     fn default_gen() -> Self {
@@ -77,21 +77,21 @@ could use an explicit root node, where `parent` of `Node` is always there (if it
     derive(Inspect),
     inspect(with = "inspect_tree", bounds = "T: Inspect")
 )]
-pub struct Tree<T, D = (), G: Gen = DefaultGen> {
-    nodes: NodeArena<T, D, G>,
+pub struct Tree<T, G: Gen = DefaultGen> {
+    nodes: NodeArena<T, G>,
     /// Corresponds to the implicit root
     root: Link<Slot>,
 }
 
-impl<T, D, G: Gen> link::Id<Slot> for NodeId<T, D, G> {
+impl<T, G: Gen> link::Id<Slot> for NodeId<T, G> {
     fn slot(&self) -> Slot {
         self.slot
     }
 }
 
-impl<T, D, G: Gen> link::Tree for Tree<T, D, G> {
+impl<T, G: Gen> link::Tree for Tree<T, G> {
     type Slot = Slot;
-    type Id = NodeId<T, D, G>;
+    type Id = NodeId<T, G>;
 
     fn root_mut(&mut self) -> &mut Link<Self::Slot> {
         &mut self.root
@@ -117,7 +117,7 @@ impl<T, D, G: Gen> link::Tree for Tree<T, D, G> {
 }
 
 #[cfg(feature = "igri")]
-fn inspect_tree<'a, T, D, G: Gen>(tree: &'a mut Tree<T, D, G>, ui: &igri::imgui::Ui, label: &str)
+fn inspect_tree<'a, T, G: Gen>(tree: &'a mut Tree<T, G>, ui: &igri::imgui::Ui, label: &str)
 where
     T: igri::Inspect,
 {
@@ -137,27 +137,25 @@ where
     derive(Inspect),
     inspect(with = "inspect_node", bounds = "T: Inspect")
 )]
-pub struct Node<T, D = (), G: Gen = DefaultGen> {
+pub struct Node<T, G: Gen = DefaultGen> {
     token: T,
     link: Link<Slot>,
-    _d: PhantomData<fn() -> D>,
     _g: PhantomData<fn() -> G>,
 }
 
 #[cfg(feature = "igri")]
-fn inspect_node<'a, T, D, G: Gen>(node: &mut Node<T, D, G>, ui: &igri::imgui::Ui, label: &str)
+fn inspect_node<'a, T, G: Gen>(node: &mut Node<T, G>, ui: &igri::imgui::Ui, label: &str)
 where
     T: igri::Inspect,
 {
     node.token.inspect(ui, label);
 }
 
-impl<T, D, G: Gen> Node<T, D, G> {
+impl<T, G: Gen> Node<T, G> {
     fn from_parent(token: T, parent: Slot) -> Self {
         Self {
             token,
             link: Link::with_parent(parent),
-            _d: PhantomData,
             _g: PhantomData,
         }
     }
@@ -166,7 +164,6 @@ impl<T, D, G: Gen> Node<T, D, G> {
         Self {
             token,
             link: Link::default(),
-            _d: PhantomData,
             _g: PhantomData,
         }
     }
@@ -202,13 +199,13 @@ impl<T, D, G: Gen> Node<T, D, G> {
     }
 }
 
-impl<T, D, G: Gen> Default for Tree<T, D, G> {
+impl<T, G: Gen> Default for Tree<T, G> {
     fn default() -> Self {
         Self::with_capacity(0)
     }
 }
 
-impl<T, D, G: Gen> Tree<T, D, G> {
+impl<T, G: Gen> Tree<T, G> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -220,7 +217,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
         }
     }
 
-    pub fn contains(&self, index: NodeId<T, D, G>) -> bool {
+    pub fn contains(&self, index: NodeId<T, G>) -> bool {
         self.nodes.contains(index)
     }
 
@@ -236,39 +233,39 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 }
 
 /// # ----- Node accessors -----
-impl<T, D, G: Gen> Tree<T, D, G> {
+impl<T, G: Gen> Tree<T, G> {
     /// Returns a reference to the node
-    pub fn node(&self, id: NodeId<T, D, G>) -> Option<&Node<T, D, G>> {
+    pub fn node(&self, id: NodeId<T, G>) -> Option<&Node<T, G>> {
         self.nodes.get(id)
     }
 
     /// Returns a mutable reference to the node
-    pub fn node_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut Node<T, D, G>> {
+    pub fn node_mut(&mut self, id: NodeId<T, G>) -> Option<&mut Node<T, G>> {
         self.nodes.get_mut(id)
     }
 
     /// Returns a reference to the node
-    pub fn node_by_slot(&self, slot: Slot) -> Option<&Node<T, D, G>> {
+    pub fn node_by_slot(&self, slot: Slot) -> Option<&Node<T, G>> {
         self.nodes.get_by_slot(slot)
     }
 
     /// Returns a mutable reference to the node
-    pub fn node_mut_by_slot(&mut self, slot: Slot) -> Option<&mut Node<T, D, G>> {
+    pub fn node_mut_by_slot(&mut self, slot: Slot) -> Option<&mut Node<T, G>> {
         self.nodes.get_mut_by_slot(slot)
     }
 
     /// Returns reference to the data in the node
-    pub fn data(&self, id: NodeId<T, D, G>) -> Option<&T> {
+    pub fn data(&self, id: NodeId<T, G>) -> Option<&T> {
         self.nodes.get(id).map(Node::data)
     }
 
     /// Returns mutable reference to the data in the node
-    pub fn data_mut(&mut self, id: NodeId<T, D, G>) -> Option<&mut T> {
+    pub fn data_mut(&mut self, id: NodeId<T, G>) -> Option<&mut T> {
         self.nodes.get_mut(id).map(Node::data_mut)
     }
 
     /// Appends a new data to the implicit root node
-    pub fn insert(&mut self, token: T) -> NodeId<T, D, G> {
+    pub fn insert(&mut self, token: T) -> NodeId<T, G> {
         let node = Node::root(token);
         let id = self.nodes.insert(node);
 
@@ -278,9 +275,9 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 }
 
 /// # ----- Binding -----
-impl<T, D, G: Gen> Tree<T, D, G> {
+impl<T, G: Gen> Tree<T, G> {
     /// Binds a node mutably. Most mutation should happen here!
-    pub fn bind<'a>(&'a mut self, id: NodeId<T, D, G>) -> Option<iter_mut::NodeMut<'a, T, D, G>> {
+    pub fn bind<'a>(&'a mut self, id: NodeId<T, G>) -> Option<iter_mut::NodeMut<'a, T, G>> {
         if !self.nodes.contains(id) {
             None
         } else {
@@ -290,9 +287,9 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 }
 
 /// # ----- Traversal terators -----
-impl<T, D, G: Gen> Tree<T, D, G> {
+impl<T, G: Gen> Tree<T, G> {
     /// Sub tree rooted at the node (depth-first, preorder)
-    pub fn subtree(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
+    pub fn subtree(&self, id: NodeId<T, G>) -> iter::Traverse<T, G> {
         let states = vec![iter::TraverseState::Parent(iter::NodeRef::new(
             id.slot, self,
         ))];
@@ -300,7 +297,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 
     /// Sub trees rooted at this node and the siblings (depth-first, preorder)
-    pub fn traverse(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
+    pub fn traverse(&self, id: NodeId<T, G>) -> iter::Traverse<T, G> {
         let states = vec![iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
             next: Some(id.slot),
             tree: self,
@@ -309,7 +306,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 
     /// Sub trees at the root
-    pub fn traverse_root_nodes(&self) -> iter::Traverse<T, D, G> {
+    pub fn traverse_root_nodes(&self) -> iter::Traverse<T, G> {
         let mut states = vec![];
         states.push(iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
             next: self.root.first_child(),
@@ -320,9 +317,9 @@ impl<T, D, G: Gen> Tree<T, D, G> {
 }
 
 /// # ----- Flat, non-recursive iterators -----
-impl<T, D, G: Gen> Tree<T, D, G> {
+impl<T, G: Gen> Tree<T, G> {
     /// Sub trees rooted at siblings after this node (depth-first, preorder)
-    pub fn siblings(&self, id: NodeId<T, D, G>) -> iter::Traverse<T, D, G> {
+    pub fn siblings(&self, id: NodeId<T, G>) -> iter::Traverse<T, G> {
         let states = vec![iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
             next: self.node(id).and_then(|n| n.link.next_sibling()),
             tree: self,
@@ -331,7 +328,7 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 
     /// Children (depth-first, preorder)
-    pub fn children(&mut self, id: NodeId<T, D, G>) -> iter::SiblingsNext<T, D, G> {
+    pub fn children(&mut self, id: NodeId<T, G>) -> iter::SiblingsNext<T, G> {
         let first = self.node(id).and_then(|node| node.link.first_child());
         iter::SiblingsNext {
             next: first,
@@ -340,13 +337,13 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 
     /// Returns iterator of child node bindings
-    pub fn children_mut(&mut self, id: NodeId<T, D, G>) -> iter_mut::SiblingsMutNext<T, D, G> {
+    pub fn children_mut(&mut self, id: NodeId<T, G>) -> iter_mut::SiblingsMutNext<T, G> {
         let first = self.node(id).and_then(|node| node.link.first_child());
         let bind = iter_mut::TreeBind::new(self);
         iter_mut::SiblingsMutNext { bind, next: first }
     }
 
-    pub fn root_nodes(&self) -> iter::SiblingsNext<T, D, G> {
+    pub fn root_nodes(&self) -> iter::SiblingsNext<T, G> {
         iter::SiblingsNext {
             next: self.root.first_child(),
             tree: self,
@@ -354,30 +351,30 @@ impl<T, D, G: Gen> Tree<T, D, G> {
     }
 
     /// Returns iterator of child node bindings
-    pub fn root_nodes_mut(&mut self) -> iter_mut::SiblingsMutNext<T, D, G> {
+    pub fn root_nodes_mut(&mut self) -> iter_mut::SiblingsMutNext<T, G> {
         let first = self.root.first_child();
         let bind = iter_mut::TreeBind::new(self);
         iter_mut::SiblingsMutNext { bind, next: first }
     }
 }
 
-impl<T, D, G: Gen> ops::Index<NodeId<T, D, G>> for Tree<T, D, G> {
-    type Output = Node<T, D, G>;
-    fn index(&self, id: NodeId<T, D, G>) -> &Self::Output {
+impl<T, G: Gen> ops::Index<NodeId<T, G>> for Tree<T, G> {
+    type Output = Node<T, G>;
+    fn index(&self, id: NodeId<T, G>) -> &Self::Output {
         self.node(id).unwrap()
     }
 }
 
-impl<T, D, G: Gen> ops::IndexMut<NodeId<T, D, G>> for Tree<T, D, G> {
-    fn index_mut(&mut self, id: NodeId<T, D, G>) -> &mut Self::Output {
+impl<T, G: Gen> ops::IndexMut<NodeId<T, G>> for Tree<T, G> {
+    fn index_mut(&mut self, id: NodeId<T, G>) -> &mut Self::Output {
         self.node_mut(id).unwrap()
     }
 }
 
 /// # ---- Tree node impls -----
-impl<T, D, G: Gen> NodeId<T, D, G> {
+impl<T, G: Gen> NodeId<T, G> {
     /// Attaches a child to the node
-    pub fn attach(self, child: T, tree: &mut Tree<T, D, G>) -> Option<NodeId<T, D, G>> {
+    pub fn attach(self, child: T, tree: &mut Tree<T, G>) -> Option<NodeId<T, G>> {
         if !tree.contains(self) {
             return None;
         };

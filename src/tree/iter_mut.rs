@@ -7,11 +7,11 @@ use std::{cell::UnsafeCell, mem, rc::Rc};
 use super::*;
 
 /// Virtual `Rc<RefCell<Tree>>`
-pub(crate) struct TreeBind<'a, T, D = (), G: Gen = DefaultGen> {
-    inner: Rc<TreeBindDrop<'a, T, D, G>>,
+pub(crate) struct TreeBind<'a, T, G: Gen = DefaultGen> {
+    inner: Rc<TreeBindDrop<'a, T, G>>,
 }
 
-impl<'a, T, D, G: Gen> Clone for TreeBind<'a, T, D, G> {
+impl<'a, T, G: Gen> Clone for TreeBind<'a, T, G> {
     fn clone(&self) -> Self {
         Self {
             inner: Rc::clone(&self.inner),
@@ -19,24 +19,24 @@ impl<'a, T, D, G: Gen> Clone for TreeBind<'a, T, D, G> {
     }
 }
 
-struct TreeBindDrop<'a, T, D = (), G: Gen = DefaultGen> {
-    original: &'a mut Tree<T, D, G>,
+struct TreeBindDrop<'a, T, G: Gen = DefaultGen> {
+    original: &'a mut Tree<T, G>,
     /// Here we're using `UnsafeCell` instead of `RefCell` so that we don't have to be bothered with
     /// lifetime of `cell::{Ref, RefMut}`. How ever, it is our risk to not break the aliasing rules
     /// at runtime.
-    tree: UnsafeCell<Tree<T, D, G>>,
+    tree: UnsafeCell<Tree<T, G>>,
 }
 
 /// Give back the tree on drop
-impl<'a, T, D, G: Gen> Drop for TreeBindDrop<'a, T, D, G> {
+impl<'a, T, G: Gen> Drop for TreeBindDrop<'a, T, G> {
     fn drop(&mut self) {
         mem::swap(self.original, unsafe { &mut *self.tree.get() });
     }
 }
 
-impl<'a, T, D, G: Gen> TreeBind<'a, T, D, G> {
+impl<'a, T, G: Gen> TreeBind<'a, T, G> {
     /// Take the tree and wrap it in `UnsafeCell`
-    pub fn new(original: &'a mut Tree<T, D, G>) -> Self {
+    pub fn new(original: &'a mut Tree<T, G>) -> Self {
         let mut tree = Tree::new();
         mem::swap(original, &mut tree);
 
@@ -50,13 +50,13 @@ impl<'a, T, D, G: Gen> TreeBind<'a, T, D, G> {
 
     /// # Safety
     /// It's backed by `UnsafeCell`. Make sure to follow the aliasing rule at runtime!
-    pub unsafe fn tree(&self) -> &Tree<T, D, G> {
+    pub unsafe fn tree(&self) -> &Tree<T, G> {
         unsafe { &*self.inner.as_ref().tree.get() }
     }
 
     /// # Safety
     /// It's backed by `UnsafeCell`. Make sure to follow the aliasing rule at runtime!
-    pub unsafe fn tree_mut(&self) -> &mut Tree<T, D, G> {
+    pub unsafe fn tree_mut(&self) -> &mut Tree<T, G> {
         unsafe { &mut *self.inner.as_ref().tree.get() }
     }
 }
@@ -64,31 +64,31 @@ impl<'a, T, D, G: Gen> TreeBind<'a, T, D, G> {
 /// Binding of an existing node and their children
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-pub struct NodeMut<'a, T, D = (), G: Gen = DefaultGen> {
+pub struct NodeMut<'a, T, G: Gen = DefaultGen> {
     #[derivative(Debug = "ignore")]
-    pub(crate) bind: TreeBind<'a, T, D, G>,
+    pub(crate) bind: TreeBind<'a, T, G>,
     pub(crate) slot: Slot,
 }
 
-impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
-    pub(crate) fn bind(tree: &'a mut Tree<T, D, G>, slot: Slot) -> Self {
+impl<'a, T, G: Gen> NodeMut<'a, T, G> {
+    pub(crate) fn bind(tree: &'a mut Tree<T, G>, slot: Slot) -> Self {
         Self {
             bind: TreeBind::new(tree),
             slot,
         }
     }
 
-    pub fn id(&self) -> NodeId<T, D, G> {
+    pub fn id(&self) -> NodeId<T, G> {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.upgrade(self.slot).unwrap()
     }
 
-    unsafe fn node(&self) -> &Node<T, D, G> {
+    unsafe fn node(&self) -> &Node<T, G> {
         let tree = unsafe { self.bind.tree() };
         tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
-    unsafe fn node_mut(&self) -> &mut Node<T, D, G> {
+    unsafe fn node_mut(&self) -> &mut Node<T, G> {
         let tree = unsafe { self.bind.tree_mut() };
         tree.nodes.get_mut_by_slot(self.slot).unwrap()
     }
@@ -155,7 +155,7 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
         })
     }
 
-    pub fn children(&mut self) -> SiblingsMutNext<'a, T, D, G> {
+    pub fn children(&mut self) -> SiblingsMutNext<'a, T, G> {
         let next = unsafe { self.link().first_child() };
         SiblingsMutNext {
             bind: self.bind.clone(),
@@ -209,9 +209,9 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
 }
 
 /// # ---- Iterators ----
-impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
+impl<'a, T, G: Gen> NodeMut<'a, T, G> {
     /// This node and nodes after this node
-    pub fn traverse_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
+    pub fn traverse_mut(&mut self) -> SiblingsMutNext<'a, T, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
             next: Some(self.slot),
@@ -219,7 +219,7 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     }
 
     /// Nodes after this node
-    pub fn siblings_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
+    pub fn siblings_mut(&mut self) -> SiblingsMutNext<'a, T, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
             next: unsafe { self.link().next_sibling() },
@@ -227,7 +227,7 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     }
 
     // /// Sub tree rooted at the node (depth-first, preorder)
-    // pub fn subtree(&self, id: NodeId<T,D,G>) -> iter::Traverse<T,D,G> {
+    // pub fn subtree(&self, id: NodeId<T, G>) -> iter::Traverse<T, G> {
     //     let states = vec![iter::TraverseState::Parent(iter::NodeRef::new(
     //         id.slot, self,
     //     ))];
@@ -235,7 +235,7 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
     // }
 
     /// Children of this node
-    pub fn children_mut(&mut self) -> SiblingsMutNext<'a, T, D, G> {
+    pub fn children_mut(&mut self) -> SiblingsMutNext<'a, T, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
             next: unsafe { self.link().first_child() },
@@ -251,14 +251,14 @@ impl<'a, T, D, G: Gen> NodeMut<'a, T, D, G> {
 /// Iterator that walks through siblings
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-pub struct SiblingsMutNext<'a, T, D = (), G: Gen = DefaultGen> {
+pub struct SiblingsMutNext<'a, T, G: Gen = DefaultGen> {
     #[derivative(Debug = "ignore")]
-    pub(crate) bind: TreeBind<'a, T, D, G>,
+    pub(crate) bind: TreeBind<'a, T, G>,
     pub(crate) next: Option<Slot>,
 }
 
-impl<'a, T, D, G: Gen> SiblingsMutNext<'a, T, D, G> {
-    pub fn bind(&mut self) -> Option<NodeMut<'a, T, D, G>> {
+impl<'a, T, G: Gen> SiblingsMutNext<'a, T, G> {
+    pub fn bind(&mut self) -> Option<NodeMut<'a, T, G>> {
         if let Some(slot) = self.next {
             Some(NodeMut {
                 bind: self.bind.clone(),
@@ -270,8 +270,8 @@ impl<'a, T, D, G: Gen> SiblingsMutNext<'a, T, D, G> {
     }
 }
 
-impl<'a, T, D, G: Gen> Iterator for SiblingsMutNext<'a, T, D, G> {
-    type Item = NodeMut<'a, T, D, G>;
+impl<'a, T, G: Gen> Iterator for SiblingsMutNext<'a, T, G> {
+    type Item = NodeMut<'a, T, G>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.next?;
 
