@@ -1,6 +1,4 @@
-/*!
-Link of tree node IDs
-*/
+//! Link of tree node IDs
 
 use std::fmt;
 

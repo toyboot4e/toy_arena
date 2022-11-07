@@ -1,6 +1,4 @@
-/*!
-Iterators of mutable bindings of the [`Tree`] nodes
-*/
+//! Iterators of mutable bindings of the [`Tree`] nodes
 
 use std::{cell::UnsafeCell, mem, rc::Rc};
 

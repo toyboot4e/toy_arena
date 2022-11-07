@@ -1,14 +1,11 @@
-/*!
-Extensible generational arena for various uses. [`Example`](_example)
-
-Goals: Tiny code and real use. Non-goals: Super fast performance.
-
-# Similar crates
-* [generational_arena](https://docs.rs/generational_arena/latest)
-* [thunderdome](https://docs.rs/thunderdome/latest)
-
-NOTE: Still early, bugs can exist!
-*/
+//! Extensible generational arena for various uses.
+//!
+//! Goals: Tiny code and real use. Non-goals: Super fast performance.
+//!
+//! # Similar crates
+//! * [pulz_arena](https://docs.rs/pulz_arena/latest)
+//! * [generational_arena](https://docs.rs/generational_arena/latest)
+//! * [thunderdome](https://docs.rs/thunderdome/latest)
 
 // TODO: prefer immutable generations and slots
 

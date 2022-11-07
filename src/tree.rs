@@ -1,12 +1,10 @@
-/*!
-Tree layered on top of the generational arena
-
-# Similar crates
-* [indextree](https://docs.rs/indextree/latest/indextree/)
-* [ego_tree](https://docs.rs/ego-tree/latest/ego_tree/)
-
-WARNING: This module **definitely** needs more tests!
-*/
+//! Tree layered on top of the generational arena
+//! 
+//! # Similar crates
+//! * [indextree](https://docs.rs/indextree/latest/indextree/)
+//! * [ego_tree](https://docs.rs/ego-tree/latest/ego_tree/)
+//! 
+//! WARNING: This module **definitely** needs more tests!
 
 // TODO: deep clone
 // TODO: directon type parameter
