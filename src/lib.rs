@@ -1,6 +1,4 @@
-//! Extensible generational arena for various uses.
-//!
-//! Goals: Tiny code and real use. Non-goals: Super fast performance.
+//! Extensible generational arena with a builtin [`mod@tree`] support.
 //!
 //! # Similar crates
 //! * [pulz_arena](https://docs.rs/pulz_arena/latest)
@@ -37,15 +35,13 @@ use crate::iter::*;
 /// Default generation type used by arena
 pub type DefaultGen = NonZeroU32;
 
-/**
-Generational arena: basically a [`Vec`], but with fixed item positions
-
-Arena operations don't move items. And more, each item in the arena is given "generation" value,
-where we can distinguish new values from old values (and see if a value is already replaced by new
-one).
-
-See also: [`crate::iter`].
-*/
+/// Generational arena: basically a [`Vec`], but with fixed item positions
+///
+/// Arena operations don't move items. And more, each item in the arena is given "generation" value,
+/// where we can distinguish new values from old values (and see if a value is already replaced by
+/// new one).
+///
+/// See also: [`crate::iter`].
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -125,27 +121,25 @@ struct Entry<T, G: Gen = DefaultGen> {
     data: Option<T>,
 }
 
-/**
-Slot with identitiy based on generation.
-
-Item in the [`Arena`] is located by [`Slot`] and identified by their generation. If the item at a
-slot is already replaced by another value, the generation of the entry is already incremented, so we
-can identify the original item from the old, replaced item.
-
-# Memory use
-```
-use std::mem;
-use toy_arena::Index;
-assert_eq!(
-    mem::size_of::<Index<()>>(),
-    mem::size_of::<u64>(),
-);
-assert_eq!(
-    mem::size_of::<Option<Index<()>>>(),
-    mem::size_of::<u64>(),
-);
-```
-*/
+/// [`Arena`] lot with identitiy based on generation.
+///
+/// Item in the [`Arena`] is located by [`Slot`] and identified by their generation. If the item at
+/// a slot is already replaced by another value, the generation of the entry is already incremented,
+/// so we can identify the original item from the old, replaced item.
+///
+/// # Memory use
+/// ```
+/// use std::mem;
+/// use toy_arena::Index;
+/// assert_eq!(
+///     mem::size_of::<Index<()>>(),
+///     mem::size_of::<u64>(),
+/// );
+/// assert_eq!(
+///     mem::size_of::<Option<Index<()>>>(),
+///     mem::size_of::<u64>(),
+/// );
+/// ```
 #[derive(Derivative)]
 #[derivative(Copy, Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(
@@ -186,11 +180,8 @@ impl<T, G: Gen> Index<T, G> {
 
 type RawSlot = u32;
 
-/**
-Index of the backing `Vec` in [`Arena`]. It can be [upgraded](`Arena::upgrade`) to [`Index`], but
-prefer mutable iterators to slot-based iteration.
-
-*/
+/// Index of the backing `Vec` in [`Arena`]. It can be [upgraded](`Arena::upgrade`) to [`Index`],
+/// but prefer mutable iterators to slot-based iteration.
 #[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "igri", derive(Inspect))]
 #[repr(transparent)]
@@ -243,12 +234,9 @@ impl Slot {
     }
 }
 
-/**
-Generation type, one of the unsized `NonZero` types in [`std::num`]
-
-Generation of the first item at a slot is always `2` (since it's using `NonZero` type and we'll
-always increase the generation on creating new value).
-*/
+/// Generation type, one of the unsized `NonZero` types in [`std::num`]
+///
+/// Generation of the first item at a slot is always `2` (since it's using `NonZero` type and we'll always increase the generation on creating new value).
 pub trait Gen: Debug + Clone + Copy + PartialEq + Eq + Hash + 'static {
     fn default_gen() -> Self;
     fn next(&mut self) -> Self;
@@ -718,15 +706,13 @@ impl<T, G: Gen> FromIterator<T> for Arena<T, G> {
     }
 }
 
-/**
-Creates an [`Arena`] and with given values. [`Arena<T>`] type might have to be annotated.
-
-# Example
-```
-use toy_arena::{arena, Arena};
-let data: Arena<usize> = arena![0, 1, 2, 3, 4];
-```
-*/
+/// Creates an [`Arena`] and with given values. [`Arena<T>`] type might have to be annotated.
+///
+/// # Example
+/// ```
+/// use toy_arena::{arena, Arena};
+/// let data: Arena<usize> = arena![0, 1, 2, 3, 4];
+/// ```
 #[macro_export]
 macro_rules! arena {
     ($($data:expr),*) => {{
