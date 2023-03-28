@@ -11,20 +11,20 @@
 
 // use closures to implement `IntoIter`
 
-pub mod iter;
-pub mod tree;
+// pub mod iter;
+// pub mod tree;
 
 #[cfg(test)]
 mod test;
 
 use std::{
-    cell::UnsafeCell,
     fmt::{self, Debug},
     hash::Hash,
     iter::*,
     marker::PhantomData,
+    mem,
     num::*,
-    ops::{self, DerefMut},
+    ops,
 };
 
 #[cfg(feature = "igri")]
@@ -32,7 +32,7 @@ use igri::Inspect;
 
 use derivative::Derivative;
 
-use crate::iter::*;
+// use crate::iter::*;
 
 /// Default generation type used by arena.
 pub type DefaultGen = NonZeroU32;
@@ -55,13 +55,10 @@ pub type DefaultGen = NonZeroU32;
 )]
 pub struct Arena<T, G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
-    /// Can be shared by the arena and a mutable iterator
-    #[derivative(
-        Hash(hash_with = "self::hash_unsafe_cell"),
-        PartialEq(compare_with = "self::cmp_unsafe_cell"),
-        Clone(clone_with = "self::clone_unsafe_cell")
-    )]
-    slot_states: UnsafeCell<SlotStates>,
+    /// Linked list of free slots
+    free: Option<Slot>,
+    /// Number of filled entries
+    len: usize,
 }
 
 #[cfg(feature = "igri")]
@@ -79,27 +76,6 @@ where
     );
 }
 
-fn hash_unsafe_cell<T: Hash, H: std::hash::Hasher>(x: &UnsafeCell<T>, state: &mut H) {
-    unsafe {
-        (*x.get()).hash(state);
-    }
-}
-
-fn clone_unsafe_cell<T: Clone>(x: &UnsafeCell<T>) -> UnsafeCell<T> {
-    unsafe { UnsafeCell::new((*x.get()).clone()) }
-}
-
-fn cmp_unsafe_cell<T: PartialEq>(x: &UnsafeCell<T>, other: &UnsafeCell<T>) -> bool {
-    // compare address
-    unsafe { &*x.get() == &*other.get() }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct SlotStates {
-    n_items: Slot,
-    free: Vec<Slot>,
-}
-
 /* Note on `dervative` use:
 We went to implement std traits only when all the fields implement that trait.
 We can add `where field: Trait` bound for each field, but it exposes `Entry` type to the public
@@ -114,9 +90,9 @@ API, so we added indirect bounds above
     Eq(bound = "T: Eq"),
     Hash(bound = "T: Hash")
 )]
-struct Entry<T, G: Gen = DefaultGen> {
-    gen: G,
-    data: Option<T>,
+enum Entry<T, G: Gen = DefaultGen> {
+    Filled { gen: G, data: T },
+    Free { gen: G, next_free: Option<Slot> },
 }
 
 /// Slot with identitiy based on generation.
@@ -241,7 +217,7 @@ impl Slot {
 /// always increase the generation on creating new value).
 pub trait Gen: Debug + Clone + Copy + PartialEq + Eq + Hash + 'static {
     fn default_gen() -> Self;
-    fn next(&mut self) -> Self;
+    fn next(&self) -> Self;
 }
 
 macro_rules! impl_generators {
@@ -250,11 +226,10 @@ macro_rules! impl_generators {
             fn default_gen() -> Self {
                 unsafe { $nonzero::new_unchecked(1) }
             }
-            fn next(&mut self) -> Self {
+            fn next(&self) -> Self {
                 // Always increment. Initial item is given raw generation "2"
                 let raw = self.get();
                 let new = $nonzero::new(raw + 1).expect("generation overflow");
-                *self = new;
                 new
             }
         }
@@ -285,35 +260,31 @@ impl<T, G: Gen> Arena<T, G> {
 
         // fullfill the data with empty entries
         let mut data = Vec::with_capacity(cap);
-        for _ in 0..cap {
-            data.push(Self::default_entry());
+        for i in 0..cap {
+            data.push(Entry::Free {
+                gen: G::default_gen(),
+                next_free: if i != cap - 1 {
+                    Some(Slot::from_raw(i as RawSlot + 1))
+                } else {
+                    None
+                },
+            });
         }
-
-        let free = (0..cap as RawSlot)
-            .rev()
-            .map(|raw| Slot { raw })
-            .collect::<Vec<_>>();
 
         Self {
             entries: data,
-            slot_states: UnsafeCell::new(SlotStates {
-                free,
-                n_items: Default::default(),
-            }),
-        }
-    }
-
-    fn default_entry() -> Entry<T, G> {
-        Entry {
-            data: None,
-            gen: G::default_gen(),
+            free: if cap > 0 {
+                Some(Slot::from_raw(0))
+            } else {
+                None
+            },
+            len: 0,
         }
     }
 
     /// Number of items in this arena.
     pub fn len(&self) -> usize {
-        let slot_states = unsafe { &*self.slot_states.get() };
-        slot_states.n_items.to_usize()
+        self.len
     }
 
     /// Capacity of the backing vec.
@@ -328,129 +299,141 @@ impl<T, G: Gen> Arena<T, G> {
 
 /// # ----- Mutations -----
 impl<T, G: Gen> Arena<T, G> {
+    /// Finds free slot and insert data.
     pub fn insert(&mut self, data: T) -> Index<T, G> {
-        let slot = self.next_free_slot();
+        let slot = match self.free {
+            Some(free_slot) => free_slot,
+            None => {
+                // no empty entry. alloc!
+                self.entries.push(Entry::Filled {
+                    gen: G::default_gen(),
+                    data,
+                });
+                self.len += 1;
+
+                return Index {
+                    slot: Slot::from_raw(self.entries.len() as RawSlot),
+                    gen: G::default_gen(),
+                    _t: PhantomData,
+                };
+            }
+        };
+
         let entry = &mut self.entries[slot.to_usize()];
 
         let gen = {
-            debug_assert!(entry.data.is_none(), "bug: free slot occupied?");
-            entry.data = Some(data);
-            let slot_states = self.slot_states.get_mut();
-            slot_states.n_items.inc_mut();
-            entry.gen.next()
+            let (gen, next_free) = match entry {
+                Entry::Filled { .. } => {
+                    panic!("bug: free slot occupied?");
+                }
+                Entry::Free { gen, next_free } => (*gen, *next_free),
+            };
+
+            let gen = gen.next();
+            *entry = Entry::Filled { gen, data };
+
+            self.free = next_free;
+            self.len += 1;
+
+            gen
         };
 
         Index::<T, G>::new(slot, gen)
     }
 
-    /// Removes all the items.
+    /// Removes all the items, keeping the generation values.
     pub fn clear(&mut self) {
-        let mut slot_states = self.slot_states.get_mut();
-        slot_states.free.clear();
-        slot_states.n_items = Slot { raw: 0 };
-    }
+        let len = self.entries.len();
 
-    /// Removes all the items and resets generation of every entry.
-    pub fn clear_and_init_generations(&mut self) {
-        self.clear();
-        for e in &mut self.entries {
-            e.gen = G::default_gen();
+        // set up linked list of free slots
+        for (i, entry) in self.entries.iter_mut().enumerate() {
+            let gen = match entry {
+                Entry::Filled { gen, .. } => gen.clone(),
+                Entry::Free { .. } => continue,
+            };
+
+            *entry = Entry::Free {
+                gen,
+                // TODO: better isEnd (split last on iteration)
+                next_free: if i != len - 1 {
+                    None
+                } else {
+                    Some(Slot::from_raw(i as RawSlot + 1))
+                },
+            }
         }
+
+        self.len = 0;
+
+        self.free = if self.entries.is_empty() {
+            None
+        } else {
+            Some(Slot::from_raw(0))
+        };
     }
 
     /// Returns some item if the generation matchesA. Returns none on mismatch or no data.
     pub fn remove(&mut self, index: Index<T, G>) -> Option<T> {
-        let entry = &mut self.entries[index.slot.to_usize()];
-        if entry.gen != index.gen || entry.data.is_none() {
-            // generation mistmatch: can't remove
-            None
-        } else {
-            Some(self::remove_binded(
-                entry,
-                self.slot_states.get_mut().deref_mut(),
-                index,
-            ))
+        let entry = self.entries.get_mut(index.slot.to_usize())?;
+
+        match entry {
+            Entry::Filled { gen, .. } if *gen == index.gen => {
+                let gen = *gen;
+                let Entry::Filled { data, .. } = mem::replace(
+                    entry,
+                    Entry::Free {
+                        gen: gen.next(),
+                        next_free: self.free,
+                    },
+                ) else {
+                    unreachable!("Arena::remove");
+                };
+
+                self.free = Some(index.slot());
+                self.len -= 1;
+
+                Some(data)
+            }
+            _ => None,
         }
     }
 
     pub(crate) fn remove_by_slot(&mut self, slot: Slot) -> Option<T> {
         let index = self.upgrade(slot)?;
-        let entry = &mut self.entries[index.slot.to_usize()];
-        Some(self::remove_binded(
-            entry,
-            self.slot_states.get_mut().deref_mut(),
-            index,
-        ))
+        self.remove(index)
     }
 
-    /// Returns none if the generation matches. Returns some index on mismatch or no data.
+    /// Faster [`remove`](Self::remove).
     pub fn invalidate(&mut self, index: Index<T, G>) -> Option<Index<T, G>> {
-        let entry = &mut self.entries[index.slot.to_usize()];
-        self::invalidate(entry, self.slot_states.get_mut().deref_mut(), index)
-    }
+        let entry = self.entries.get_mut(index.slot.to_usize())?;
 
-    /// Inalidates given index. Returns some index on updating the generation.
-    pub fn invalidate_indices(&mut self, index: Index<T, G>) -> Option<Index<T, G>> {
-        let entry = &mut self.entries[index.slot.to_usize()];
-        if index.gen == entry.gen && entry.data.is_some() {
-            entry.gen = entry.gen.clone().next();
-            Some(Index {
-                gen: entry.gen,
-                slot: index.slot,
-                _t: PhantomData,
-            })
-        } else {
-            None
-        }
-    }
-
-    pub fn replace(&mut self, index: Index<T, G>, new_data: T) -> Index<T, G> {
-        if !(self.contains(index)) {
-            self.insert(new_data)
-        } else {
-            let entry = &mut self.entries[index.slot.to_usize()];
-            self::replace_binded(entry, index.slot, new_data)
-        }
-    }
-
-    fn next_free_slot(&mut self) -> Slot {
-        let slot_states = self.slot_states.get_mut();
-        if let Some(slot) = slot_states.free.pop() {
-            slot
-        } else if self.entries.len() < self.entries.capacity() {
-            let slot = Slot {
-                // NOTE: We know entries[0..entries.len()] is fullfiled
-                // because `free` is fullfilled on init
-                raw: self.entries.len() as RawSlot,
-            };
-            self.entries.push(Self::default_entry());
-            slot
-        } else {
-            let mut cap = self.entries.capacity();
-            if self.entries.capacity() == 0 {
-                cap = 4;
-            } else {
-                cap *= 2;
+        match entry {
+            Entry::Filled { gen, .. } if *gen == index.gen => {
+                let gen = gen.next();
+                Some(Index { gen, ..index })
             }
-            drop(slot_states);
-            self.extend(cap);
-            self.next_free_slot()
+            _ => None,
         }
     }
 
-    /// NOTE: After extending, len < capacity.
-    fn extend(&mut self, new_cap: usize) {
-        debug_assert!(self.entries.capacity() < new_cap);
-        debug_assert!((new_cap as RawSlot) < RawSlot::MAX);
+    /// Replaces filled entry with given data or inserts it into a free slot
+    pub fn replace(&mut self, index: Index<T, G>, new_data: T) -> Index<T, G> {
+        if let Some(entry) = self.entries.get_mut(index.slot.to_usize()) {
+            match entry {
+                Entry::Filled { gen, data } => {
+                    *gen = gen.next();
+                    *data = new_data;
 
-        let prev_cap = self.entries.len();
-        self.entries.resize_with(new_cap, Self::default_entry);
-
-        // push in reverse (since the free stack is LIFO)
-        for raw in (prev_cap as RawSlot..new_cap as RawSlot).rev() {
-            let slot_states = self.slot_states.get_mut();
-            slot_states.free.push(Slot { raw });
+                    return Index {
+                        gen: gen.next(),
+                        ..index
+                    };
+                }
+                _ => {}
+            }
         }
+
+        self.insert(new_data)
     }
 
     /// Removes all items that don't satisfy the predicate.
@@ -458,12 +441,15 @@ impl<T, G: Gen> Arena<T, G> {
         let mut i = 0;
         while i < self.entries.len() {
             let entry = &mut self.entries[i];
-            if let Some(data) = &mut entry.data {
-                let slot = Slot { raw: i as RawSlot };
-                let index = Index::new(slot, entry.gen.clone());
-                if !pred(index.clone(), data) {
-                    self.remove(index).unwrap();
+            match entry {
+                Entry::Filled { data, gen } => {
+                    let slot = Slot { raw: i as RawSlot };
+                    let index = Index::new(slot, *gen);
+                    if !pred(index.clone(), data) {
+                        self.remove(index).unwrap();
+                    }
                 }
+                _ => {}
             }
 
             i += 1;
@@ -474,51 +460,12 @@ impl<T, G: Gen> Arena<T, G> {
     /// indices.
     pub unsafe fn reset_generations(&mut self) {
         for entry in &mut self.entries {
-            entry.gen = G::default_gen();
+            match entry {
+                Entry::Filled { gen, .. } => *gen = G::default_gen(),
+                Entry::Free { gen, .. } => *gen = G::default_gen(),
+            }
         }
     }
-}
-
-/// Borrows arena partially.
-pub(crate) fn remove_binded<T, G: Gen>(
-    entry: &mut Entry<T, G>,
-    slot_states: &mut SlotStates,
-    index: Index<T, G>,
-) -> T {
-    debug_assert!(entry.data.is_some());
-    let taken = entry.data.take().unwrap();
-    slot_states.n_items.dec_mut();
-    slot_states.free.push(index.slot);
-    taken
-}
-
-/// Borrows arena partially.
-pub(crate) fn invalidate<T, G: Gen>(
-    entry: &mut Entry<T, G>,
-    slot_states: &mut SlotStates,
-    index: Index<T, G>,
-) -> Option<Index<T, G>> {
-    if entry.gen != index.gen || entry.data.is_none() {
-        // generation mismatch: can't invalidate
-        Some(Index::new(index.slot, entry.gen.clone()))
-    } else {
-        entry.data = None;
-        slot_states.n_items.dec_mut();
-        slot_states.free.push(index.slot);
-        None
-    }
-}
-
-/// Borrows arena partially.
-pub(crate) fn replace_binded<T, G: Gen>(
-    entry: &mut Entry<T, G>,
-    slot: Slot,
-    new: T,
-) -> Index<T, G> {
-    debug_assert!(entry.data.is_some());
-    entry.data = Some(new);
-    entry.gen.next();
-    Index::<T, G>::new(slot, entry.gen)
 }
 
 /// # ----- Accessors -----
@@ -528,25 +475,21 @@ impl<T, G: Gen> Arena<T, G> {
     }
 
     pub fn get(&self, index: Index<T, G>) -> Option<&T> {
-        self.entries.get(index.slot.to_usize()).and_then(|entry| {
-            if entry.gen == index.gen {
-                entry.data.as_ref()
-            } else {
-                None
-            }
-        })
+        self.entries
+            .get(index.slot.to_usize())
+            .and_then(|entry| match entry {
+                Entry::Filled { gen, data } if *gen == index.gen => Some(data),
+                _ => None,
+            })
     }
 
     pub fn get_mut(&mut self, index: Index<T, G>) -> Option<&mut T> {
         // NOTE: Rust closure is not (yet) smart enough to borrow only some fileds of struct
         self.entries
             .get_mut(index.slot.to_usize())
-            .and_then(|entry| {
-                if entry.gen == index.gen {
-                    entry.data.as_mut()
-                } else {
-                    None
-                }
+            .and_then(|entry| match entry {
+                Entry::Filled { gen, data } if *gen == index.gen => Some(data),
+                _ => None,
             })
     }
 
@@ -586,23 +529,26 @@ impl<T, G: Gen> Arena<T, G> {
             return None;
         }
 
-        self.entries.get(slot.to_usize()).and_then(|e| {
-            if e.data.is_some() {
-                Some(Index::new(slot, e.gen))
-            } else {
-                None
-            }
+        self.entries.get(slot.to_usize()).and_then(|e| match e {
+            Entry::Filled { gen, .. } => Some(Index::new(slot, *gen)),
+            _ => None,
         })
     }
 
     /// Internal use only.
     pub(crate) fn get_by_slot(&self, slot: Slot) -> Option<&T> {
-        self.entries.get(slot.to_usize())?.data.as_ref()
+        match self.entries.get(slot.to_usize())? {
+            Entry::Filled { data, .. } => Some(data),
+            _ => None,
+        }
     }
 
     /// Internal use only.
     pub(crate) fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
-        self.entries.get_mut(slot.to_usize())?.data.as_mut()
+        match self.entries.get_mut(slot.to_usize())? {
+            Entry::Filled { data, .. } => Some(data),
+            _ => None,
+        }
     }
 
     /// Internal use only.
@@ -614,57 +560,57 @@ impl<T, G: Gen> Arena<T, G> {
     }
 }
 
-/// # ----- Iterators -----
-impl<T, G: Gen> Arena<T, G> {
-    /// `(Index, &T)`
-    pub fn iter(&self) -> IndexedItemIter<T, G> {
-        IndexedItemIter {
-            entries: self.entries.iter().enumerate(),
-            n_items: unsafe { &*self.slot_states.get() }.n_items.to_usize(),
-            n_visited: 0,
-        }
-    }
-
-    /// `(Index, &mut T)`
-    pub fn iter_mut(&mut self) -> IndexedItemIterMut<T, G> {
-        IndexedItemIterMut {
-            entries: self.entries.iter_mut().enumerate(),
-            n_items: self.slot_states.get_mut().n_items.to_usize(),
-            n_visited: 0,
-        }
-    }
-
-    /// `&T`
-    pub fn items(&self) -> ItemIter<T, G> {
-        ItemIter {
-            entries: self.entries.iter(),
-            n_items: unsafe { &*self.slot_states.get() }.n_items.to_usize(),
-            n_visited: 0,
-        }
-    }
-
-    /// `&mut T`
-    pub fn items_mut(&mut self) -> ItemIterMut<T, G> {
-        ItemIterMut {
-            entries: self.entries.iter_mut(),
-            n_items: self.slot_states.get_mut().n_items.to_usize(),
-            n_visited: 0,
-        }
-    }
-
-    /// `T`. Removes all items on drop.
-    pub fn drain(&mut self) -> Drain<T, G> {
-        Drain {
-            arena: self,
-            slot: Slot::default(),
-        }
-    }
-
-    /// See [`EntryBindings`] and [`EntryBind`].
-    pub fn bindings(&mut self) -> EntryBindings<T, G> {
-        EntryBindings::new(self)
-    }
-}
+// /// # ----- Iterators -----
+// impl<T, G: Gen> Arena<T, G> {
+//     /// `(Index, &T)`
+//     pub fn iter(&self) -> IndexedItemIter<T, G> {
+//         IndexedItemIter {
+//             entries: self.entries.iter().enumerate(),
+//             n_items: unsafe { &*self.slot_states.get() }.n_items.to_usize(),
+//             n_visited: 0,
+//         }
+//     }
+//
+//     /// `(Index, &mut T)`
+//     pub fn iter_mut(&mut self) -> IndexedItemIterMut<T, G> {
+//         IndexedItemIterMut {
+//             entries: self.entries.iter_mut().enumerate(),
+//             n_items: self.slot_states.get_mut().n_items.to_usize(),
+//             n_visited: 0,
+//         }
+//     }
+//
+//     /// `&T`
+//     pub fn items(&self) -> ItemIter<T, G> {
+//         ItemIter {
+//             entries: self.entries.iter(),
+//             n_items: unsafe { &*self.slot_states.get() }.n_items.to_usize(),
+//             n_visited: 0,
+//         }
+//     }
+//
+//     /// `&mut T`
+//     pub fn items_mut(&mut self) -> ItemIterMut<T, G> {
+//         ItemIterMut {
+//             entries: self.entries.iter_mut(),
+//             n_items: self.slot_states.get_mut().n_items.to_usize(),
+//             n_visited: 0,
+//         }
+//     }
+//
+//     /// `T`. Removes all items on drop.
+//     pub fn drain(&mut self) -> Drain<T, G> {
+//         Drain {
+//             arena: self,
+//             slot: Slot::default(),
+//         }
+//     }
+//
+//     /// See [`EntryBindings`] and [`EntryBind`].
+//     pub fn bindings(&mut self) -> EntryBindings<T, G> {
+//         EntryBindings::new(self)
+//     }
+// }
 
 impl<T, G: Gen> ops::Index<Index<T, G>> for Arena<T, G> {
     type Output = T;
@@ -679,21 +625,21 @@ impl<T, G: Gen> ops::IndexMut<Index<T, G>> for Arena<T, G> {
     }
 }
 
-impl<'a, T, G: Gen> IntoIterator for &'a Arena<T, G> {
-    type IntoIter = IndexedItemIter<'a, T, G>;
-    type Item = <Self::IntoIter as Iterator>::Item;
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a, T, G: Gen> IntoIterator for &'a mut Arena<T, G> {
-    type IntoIter = IndexedItemIterMut<'a, T, G>;
-    type Item = <Self::IntoIter as Iterator>::Item;
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
+// impl<'a, T, G: Gen> IntoIterator for &'a Arena<T, G> {
+//     type IntoIter = IndexedItemIter<'a, T, G>;
+//     type Item = <Self::IntoIter as Iterator>::Item;
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.iter()
+//     }
+// }
+//
+// impl<'a, T, G: Gen> IntoIterator for &'a mut Arena<T, G> {
+//     type IntoIter = IndexedItemIterMut<'a, T, G>;
+//     type Item = <Self::IntoIter as Iterator>::Item;
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.iter_mut()
+//     }
+// }
 
 impl<T, G: Gen> FromIterator<T> for Arena<T, G> {
     fn from_iter<I>(iter: I) -> Self
