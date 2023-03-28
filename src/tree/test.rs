@@ -7,8 +7,6 @@ use std::fmt::{Debug, Display, Write};
 // --------------------------------------------------------------------------------
 // iter.rs
 
-// trace_macros!(true);
-
 #[test]
 fn tree_macro_test() {
     let tree: Tree<usize> = tree! {
@@ -155,24 +153,22 @@ x2
 // --------------------------------------------------------------------------------
 // utilities
 
-fn test_tree_manual_walk<'a, T: Display + Debug, D, G: Gen>(
-    siblings: impl Iterator<Item = NodeRef<'a, T, D, G>>,
+fn test_tree_manual_walk<'a, T: Display + Debug, G: Gen>(
+    siblings: impl Iterator<Item = NodeRef<'a, T, G>>,
     expected: &str,
 ) where
     T: 'a,
-    D: 'a,
 {
     let mut buf = String::new();
     on_children(&mut buf, 0, siblings);
     assert_eq!(buf.trim(), expected.trim());
 
-    fn on_children<'a, T: Display + Debug, D, G: Gen>(
+    fn on_children<'a, T: Display + Debug, G: Gen>(
         buf: &mut String,
         indent: usize,
-        siblings: impl Iterator<Item = NodeRef<'a, T, D, G>>,
+        siblings: impl Iterator<Item = NodeRef<'a, T, G>>,
     ) where
         T: 'a,
-        D: 'a,
     {
         for node in siblings {
             writeln!(buf, "{}{}", "  ".repeat(indent), node.data()).unwrap();
@@ -181,7 +177,7 @@ fn test_tree_manual_walk<'a, T: Display + Debug, D, G: Gen>(
     }
 }
 
-fn test_tree_traverse<T: Display, D, G: Gen>(traverse: iter::Traverse<T, D, G>, expected: &str) {
+fn test_tree_traverse<T: Display, G: Gen>(traverse: iter::Traverse<T, G>, expected: &str) {
     let mut buf = String::new();
 
     let mut depth = 0;

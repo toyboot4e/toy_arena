@@ -1,20 +1,16 @@
-/*!
-Extensible generational arena for various uses. [`Example`](_example)
+//! Generational arena with type indices. [`Example`](_example)
+//!
+//! # Similar crates
+//! * [generational_arena](https://docs.rs/generational_arena/latest)
+//! * [thunderdome](https://docs.rs/thunderdome/latest)
+//! * [pulz-arena](https://docs.rs/pulz-arena/latest)
+//!
+//! NOTE: Still early, bugs can exist!
 
-Goals: Tiny code and real use. Non-goals: Super fast performance.
-
-# Similar crates
-* [generational_arena](https://docs.rs/generational_arena/latest)
-* [thunderdome](https://docs.rs/thunderdome/latest)
-
-NOTE: Still early, bugs can exist!
-*/
-
-// TODO: prefer immutable generations and slots
+// TODO: prefer fixed generations and slots
 
 // use closures to implement `IntoIter`
 
-pub mod _example;
 pub mod iter;
 pub mod tree;
 
@@ -41,19 +37,9 @@ use crate::iter::*;
 /// Default generation type used by arena
 pub type DefaultGen = NonZeroU32;
 
-/**
-Generational arena: basically a [`Vec`], but with fixed item positions
-
-Arena operations don't move items. And more, each item in the arena is given "generation" value,
-where we can distinguish new values from old values (and see if a value is already replaced by new
-one).
-
-[`Arena`] accepts three type parameters. `T`: item type, `D`: distinct type parameter for making
-arena newtype, and `G` for the internal generation type. `D` and `G` have default types, so ordinary
-`Arena` can be written as `Arena<T>`.
-
-See also: [`crate::iter`].
-*/
+/// Generational arena
+///
+/// It's basically a [`Vec`], but with fixed item positions.
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -67,7 +53,7 @@ See also: [`crate::iter`].
     derive(Inspect),
     inspect(with = "inspect_arena", bounds = "T: Inspect")
 )]
-pub struct Arena<T, D = (), G: Gen = DefaultGen> {
+pub struct Arena<T, G: Gen = DefaultGen> {
     entries: Vec<Entry<T, G>>,
     /// Can be shared by the arena and a mutable iterator
     #[derivative(
@@ -76,13 +62,10 @@ pub struct Arena<T, D = (), G: Gen = DefaultGen> {
         Clone(clone_with = "self::clone_unsafe_cell")
     )]
     slot_states: UnsafeCell<SlotStates>,
-    /// Distinct type parameter
-    #[derivative(Debug = "ignore", PartialEq = "ignore", Hash = "ignore")]
-    _distinct: PhantomData<fn() -> D>,
 }
 
 #[cfg(feature = "igri")]
-fn inspect_arena<'a, T, D, G: Gen>(arena: &'a mut Arena<T, D, G>, ui: &igri::imgui::Ui, label: &str)
+fn inspect_arena<'a, T, G: Gen>(arena: &'a mut Arena<T, G>, ui: &igri::imgui::Ui, label: &str)
 where
     T: igri::Inspect,
 {
@@ -164,33 +147,29 @@ assert_eq!(
     derive(Inspect),
     inspect(bounds = "", with = "inspect_index")
 )]
-pub struct Index<T, D = (), G: Gen = DefaultGen> {
+pub struct Index<T, G: Gen = DefaultGen> {
     slot: Slot,
     gen: G,
     /// Item type parameter
     _t: PhantomData<fn() -> T>,
-    /// Distinct type parameter
-    _d: PhantomData<fn() -> D>,
 }
 
 #[cfg(feature = "igri")]
-fn inspect_index<'a, T, D, G: Gen>(
-    index: &'a mut Index<T, D, G>,
-    ui: &igri::imgui::Ui,
-    label: &str,
-) {
+fn inspect_index<'a, T, G: Gen>(index: &'a mut Index<T, G>, ui: &igri::imgui::Ui, label: &str) {
     index.slot.inspect(ui, label);
 }
 
-/// # ---- Common impls -----
-impl<T, D, G: Gen> Index<T, D, G> {
+impl<T, G: Gen> Index<T, G> {
     fn new(slot: Slot, gen: G) -> Self {
         Self {
             slot,
             gen,
             _t: PhantomData,
-            _d: PhantomData,
         }
+    }
+
+    pub unsafe fn new_unsafe(raw_slot: RawSlot, gen: G) -> Self {
+        Self::new(Slot::from_raw(raw_slot), gen)
     }
 
     pub fn slot(&self) -> Slot {
@@ -297,13 +276,13 @@ macro_rules! impl_generators {
 
 impl_generators!(NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64);
 
-impl<T, D, G: Gen> Default for Arena<T, D, G> {
+impl<T, G: Gen> Default for Arena<T, G> {
     fn default() -> Self {
         Self::with_capacity(4)
     }
 }
 
-impl<T, D, G: Gen> Arena<T, D, G> {
+impl<T, G: Gen> Arena<T, G> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -328,7 +307,6 @@ impl<T, D, G: Gen> Arena<T, D, G> {
                 free,
                 n_items: Default::default(),
             }),
-            _distinct: PhantomData,
         }
     }
 
@@ -356,8 +334,8 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 }
 
 /// # ----- Mutations -----
-impl<T, D, G: Gen> Arena<T, D, G> {
-    pub fn insert(&mut self, data: T) -> Index<T, D, G> {
+impl<T, G: Gen> Arena<T, G> {
+    pub fn insert(&mut self, data: T) -> Index<T, G> {
         let slot = self.next_free_slot();
         let entry = &mut self.entries[slot.to_usize()];
 
@@ -369,7 +347,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
             entry.gen.next()
         };
 
-        Index::<T, D, G>::new(slot, gen)
+        Index::<T, G>::new(slot, gen)
     }
 
     /// Removes all the items.
@@ -388,7 +366,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// Returns some item if the generation matchesA. Returns none on mismatch or no data
-    pub fn remove(&mut self, index: Index<T, D, G>) -> Option<T> {
+    pub fn remove(&mut self, index: Index<T, G>) -> Option<T> {
         let entry = &mut self.entries[index.slot.to_usize()];
         if entry.gen != index.gen || entry.data.is_none() {
             // generation mistmatch: can't remove
@@ -413,13 +391,13 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// Returns none if the generation matches. Returns some index on mismatch or no data
-    pub fn invalidate(&mut self, index: Index<T, D, G>) -> Option<Index<T, D, G>> {
+    pub fn invalidate(&mut self, index: Index<T, G>) -> Option<Index<T, G>> {
         let entry = &mut self.entries[index.slot.to_usize()];
         self::invalidate(entry, self.slot_states.get_mut().deref_mut(), index)
     }
 
     /// Inalidates given index. Returns some index on updating the generation
-    pub fn invalidate_indices(&mut self, index: Index<T, D, G>) -> Option<Index<T, D, G>> {
+    pub fn invalidate_indices(&mut self, index: Index<T, G>) -> Option<Index<T, G>> {
         let entry = &mut self.entries[index.slot.to_usize()];
         if index.gen == entry.gen && entry.data.is_some() {
             entry.gen = entry.gen.clone().next();
@@ -427,14 +405,13 @@ impl<T, D, G: Gen> Arena<T, D, G> {
                 gen: entry.gen,
                 slot: index.slot,
                 _t: PhantomData,
-                _d: PhantomData,
             })
         } else {
             None
         }
     }
 
-    pub fn replace(&mut self, index: Index<T, D, G>, new_data: T) -> Index<T, D, G> {
+    pub fn replace(&mut self, index: Index<T, G>, new_data: T) -> Index<T, G> {
         if !(self.contains(index)) {
             self.insert(new_data)
         } else {
@@ -484,7 +461,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// Removes all items that don't satisfy the predicate
-    pub fn retain<F: FnMut(Index<T, D, G>, &mut T) -> bool>(&mut self, mut pred: F) {
+    pub fn retain<F: FnMut(Index<T, G>, &mut T) -> bool>(&mut self, mut pred: F) {
         let mut i = 0;
         while i < self.entries.len() {
             let entry = &mut self.entries[i];
@@ -510,10 +487,10 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 }
 
 /// Borrows arena partially
-pub(crate) fn remove_binded<T, D, G: Gen>(
+pub(crate) fn remove_binded<T, G: Gen>(
     entry: &mut Entry<T, G>,
     slot_states: &mut SlotStates,
-    index: Index<T, D, G>,
+    index: Index<T, G>,
 ) -> T {
     debug_assert!(entry.data.is_some());
     let taken = entry.data.take().unwrap();
@@ -523,11 +500,11 @@ pub(crate) fn remove_binded<T, D, G: Gen>(
 }
 
 /// Borrows arena partially
-pub(crate) fn invalidate<T, D, G: Gen>(
+pub(crate) fn invalidate<T, G: Gen>(
     entry: &mut Entry<T, G>,
     slot_states: &mut SlotStates,
-    index: Index<T, D, G>,
-) -> Option<Index<T, D, G>> {
+    index: Index<T, G>,
+) -> Option<Index<T, G>> {
     if entry.gen != index.gen || entry.data.is_none() {
         // generation mismatch: can't invalidate
         Some(Index::new(index.slot, entry.gen.clone()))
@@ -540,24 +517,24 @@ pub(crate) fn invalidate<T, D, G: Gen>(
 }
 
 /// Borrows arena partially
-pub(crate) fn replace_binded<T, D, G: Gen>(
+pub(crate) fn replace_binded<T, G: Gen>(
     entry: &mut Entry<T, G>,
     slot: Slot,
     new: T,
-) -> Index<T, D, G> {
+) -> Index<T, G> {
     debug_assert!(entry.data.is_some());
     entry.data = Some(new);
     entry.gen.next();
-    Index::<T, D, G>::new(slot, entry.gen)
+    Index::<T, G>::new(slot, entry.gen)
 }
 
 /// # ----- Accessors -----
-impl<T, D, G: Gen> Arena<T, D, G> {
-    pub fn contains(&self, index: Index<T, D, G>) -> bool {
+impl<T, G: Gen> Arena<T, G> {
+    pub fn contains(&self, index: Index<T, G>) -> bool {
         self.entries.get(index.slot.to_usize()).is_some()
     }
 
-    pub fn get(&self, index: Index<T, D, G>) -> Option<&T> {
+    pub fn get(&self, index: Index<T, G>) -> Option<&T> {
         self.entries.get(index.slot.to_usize()).and_then(|entry| {
             if entry.gen == index.gen {
                 entry.data.as_ref()
@@ -567,7 +544,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
         })
     }
 
-    pub fn get_mut(&mut self, index: Index<T, D, G>) -> Option<&mut T> {
+    pub fn get_mut(&mut self, index: Index<T, G>) -> Option<&mut T> {
         // NOTE: Rust closure is not (yet) smart enough to borrow only some fileds of struct
         self.entries
             .get_mut(index.slot.to_usize())
@@ -582,11 +559,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 
     /// # Safety
     /// Panics if the two indices point the same slot.
-    pub fn get2_mut(
-        &mut self,
-        ix1: Index<T, D, G>,
-        ix2: Index<T, D, G>,
-    ) -> Option<(&mut T, &mut T)> {
+    pub fn get2_mut(&mut self, ix1: Index<T, G>, ix2: Index<T, G>) -> Option<(&mut T, &mut T)> {
         assert_ne!(ix1.slot(), ix2.slot());
         let x1 = self.get_mut(ix1)? as *mut _;
         let x2 = self.get_mut(ix2)?;
@@ -597,9 +570,9 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     /// Panics if any two indices point to the same slot.
     pub fn get3_mut(
         &mut self,
-        ix1: Index<T, D, G>,
-        ix2: Index<T, D, G>,
-        ix3: Index<T, D, G>,
+        ix1: Index<T, G>,
+        ix2: Index<T, G>,
+        ix3: Index<T, G>,
     ) -> Option<(&mut T, &mut T, &mut T)> {
         assert!(ix1.slot() != ix2.slot() && ix2.slot() != ix3.slot() && ix3.slot() != ix1.slot());
         let x1 = self.get_mut(ix1)? as *mut _;
@@ -615,7 +588,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// Upgrades slot to `Index`. Prefer [`Arena::bindings`] when possible
-    pub fn upgrade(&self, slot: Slot) -> Option<Index<T, D, G>> {
+    pub fn upgrade(&self, slot: Slot) -> Option<Index<T, G>> {
         if slot.to_usize() >= self.entries.len() {
             return None;
         }
@@ -649,24 +622,22 @@ impl<T, D, G: Gen> Arena<T, D, G> {
 }
 
 /// # ----- Iterators -----
-impl<T, D, G: Gen> Arena<T, D, G> {
+impl<T, G: Gen> Arena<T, G> {
     /// `(Index, &T)`
-    pub fn iter(&self) -> IndexedItemIter<T, D, G> {
+    pub fn iter(&self) -> IndexedItemIter<T, G> {
         IndexedItemIter {
             entries: self.entries.iter().enumerate(),
             n_items: unsafe { &*self.slot_states.get() }.n_items.to_usize(),
             n_visited: 0,
-            _distinct: PhantomData,
         }
     }
 
     /// `(Index, &mut T)`
-    pub fn iter_mut(&mut self) -> IndexedItemIterMut<T, D, G> {
+    pub fn iter_mut(&mut self) -> IndexedItemIterMut<T, G> {
         IndexedItemIterMut {
             entries: self.entries.iter_mut().enumerate(),
             n_items: self.slot_states.get_mut().n_items.to_usize(),
             n_visited: 0,
-            _distinct: PhantomData,
         }
     }
 
@@ -689,7 +660,7 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// `T`. Removes all items on drop
-    pub fn drain(&mut self) -> Drain<T, D, G> {
+    pub fn drain(&mut self) -> Drain<T, G> {
         Drain {
             arena: self,
             slot: Slot::default(),
@@ -697,41 +668,41 @@ impl<T, D, G: Gen> Arena<T, D, G> {
     }
 
     /// See [`EntryBindings`] and [`EntryBind`]
-    pub fn bindings(&mut self) -> EntryBindings<T, D, G> {
+    pub fn bindings(&mut self) -> EntryBindings<T, G> {
         EntryBindings::new(self)
     }
 }
 
-impl<T, D, G: Gen> ops::Index<Index<T, D, G>> for Arena<T, D, G> {
+impl<T, G: Gen> ops::Index<Index<T, G>> for Arena<T, G> {
     type Output = T;
-    fn index(&self, index: Index<T, D, G>) -> &Self::Output {
+    fn index(&self, index: Index<T, G>) -> &Self::Output {
         self.get(index).unwrap()
     }
 }
 
-impl<T, D, G: Gen> ops::IndexMut<Index<T, D, G>> for Arena<T, D, G> {
-    fn index_mut(&mut self, index: Index<T, D, G>) -> &mut Self::Output {
+impl<T, G: Gen> ops::IndexMut<Index<T, G>> for Arena<T, G> {
+    fn index_mut(&mut self, index: Index<T, G>) -> &mut Self::Output {
         self.get_mut(index).unwrap()
     }
 }
 
-impl<'a, T, D, G: Gen> IntoIterator for &'a Arena<T, D, G> {
-    type IntoIter = IndexedItemIter<'a, T, D, G>;
+impl<'a, T, G: Gen> IntoIterator for &'a Arena<T, G> {
+    type IntoIter = IndexedItemIter<'a, T, G>;
     type Item = <Self::IntoIter as Iterator>::Item;
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl<'a, T, D, G: Gen> IntoIterator for &'a mut Arena<T, D, G> {
-    type IntoIter = IndexedItemIterMut<'a, T, D, G>;
+impl<'a, T, G: Gen> IntoIterator for &'a mut Arena<T, G> {
+    type IntoIter = IndexedItemIterMut<'a, T, G>;
     type Item = <Self::IntoIter as Iterator>::Item;
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
     }
 }
 
-impl<T, D, G: Gen> FromIterator<T> for Arena<T, D, G> {
+impl<T, G: Gen> FromIterator<T> for Arena<T, G> {
     fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = T>,

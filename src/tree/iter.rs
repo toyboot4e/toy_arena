@@ -33,24 +33,24 @@ macro_rules! validate_slot {
 /// Binding of existing node and their children
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-pub struct NodeRef<'a, T, D = (), G: Gen = DefaultGen> {
+pub struct NodeRef<'a, T, G: Gen = DefaultGen> {
     slot: Slot,
     #[derivative(Debug = "ignore")]
-    tree: &'a Tree<T, D, G>,
+    tree: &'a Tree<T, G>,
 }
 
-impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
-    pub fn new(slot: Slot, tree: &'a Tree<T, D, G>) -> Self {
+impl<'a, T, G: Gen> NodeRef<'a, T, G> {
+    pub fn new(slot: Slot, tree: &'a Tree<T, G>) -> Self {
         validate_slot!(tree, slot);
         Self { slot, tree }
     }
 
-    pub fn id(&self) -> NodeId<T, D, G> {
+    pub fn id(&self) -> NodeId<T, G> {
         // we now the targetting entry exists
         self.tree.nodes.upgrade(self.slot).unwrap()
     }
 
-    pub(crate) fn node(&self) -> &'a Node<T, D, G> {
+    pub(crate) fn node(&self) -> &'a Node<T, G> {
         self.tree.nodes.get_by_slot(self.slot).unwrap()
     }
 
@@ -59,7 +59,7 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
     }
 
     /// Nodes after this node
-    pub fn siblings(&self) -> SiblingsNext<'a, T, D, G> {
+    pub fn siblings(&self) -> SiblingsNext<'a, T, G> {
         SiblingsNext {
             next: self.node().link.next_sibling(),
             tree: self.tree,
@@ -67,14 +67,14 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
     }
 
     /// This node and nodes after this node
-    pub fn preorder(&self) -> SiblingsNext<'a, T, D, G> {
+    pub fn preorder(&self) -> SiblingsNext<'a, T, G> {
         SiblingsNext {
             next: Some(self.slot),
             tree: self.tree,
         }
     }
 
-    pub fn children(&self) -> SiblingsNext<'a, T, D, G> {
+    pub fn children(&self) -> SiblingsNext<'a, T, G> {
         SiblingsNext {
             next: self.node().link.first_child(),
             // we know
@@ -91,15 +91,15 @@ impl<'a, T, D, G: Gen> NodeRef<'a, T, D, G> {
 /// Iterator that walks through siblings
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-pub struct SiblingsNext<'a, T, D = (), G: Gen = DefaultGen> {
+pub struct SiblingsNext<'a, T, G: Gen = DefaultGen> {
     /// Can be `None`
     pub(crate) next: Option<Slot>,
     #[derivative(Debug = "ignore")]
-    pub(crate) tree: &'a Tree<T, D, G>,
+    pub(crate) tree: &'a Tree<T, G>,
 }
 
-impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
-    type Item = NodeRef<'a, T, D, G>;
+impl<'a, T, G: Gen> Iterator for SiblingsNext<'a, T, G> {
+    type Item = NodeRef<'a, T, G>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.next?;
         let next_node = self
@@ -118,10 +118,10 @@ impl<'a, T, D, G: Gen> Iterator for SiblingsNext<'a, T, D, G> {
 /// Return value of [`Traverse::next`]
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-pub enum TraverseItem<'a, T, D, G: Gen> {
+pub enum TraverseItem<'a, T, G: Gen> {
     /// Sibling or rooted node
-    Node(&'a Node<T, D, G>),
-    Child(&'a Node<T, D, G>),
+    Node(&'a Node<T, G>),
+    Child(&'a Node<T, G>),
     // add parent index?
     EndChildren,
 }
@@ -129,26 +129,26 @@ pub enum TraverseItem<'a, T, D, G: Gen> {
 /// Generic traersing utility
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-pub struct Traverse<'a, T, D = (), G: Gen = DefaultGen> {
+pub struct Traverse<'a, T, G: Gen = DefaultGen> {
     #[derivative(Debug = "ignore")]
-    pub(crate) tree: &'a Tree<T, D, G>,
+    pub(crate) tree: &'a Tree<T, G>,
     /// We need `Vec` since the `Node` doesn't store parents
-    pub(crate) states: Vec<TraverseState<'a, T, D, G>>,
+    pub(crate) states: Vec<TraverseState<'a, T, G>>,
 }
 
 /// Corresponds to a depth
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-pub(crate) enum TraverseState<'a, T, D = (), G: Gen = DefaultGen> {
+pub(crate) enum TraverseState<'a, T, G: Gen = DefaultGen> {
     /// The node and their children
-    Parent(NodeRef<'a, T, D, G>),
-    FirstChild(NodeRef<'a, T, D, G>),
-    NonFirstChildren(SiblingsNext<'a, T, D, G>),
-    MultileRootNodes(SiblingsNext<'a, T, D, G>),
+    Parent(NodeRef<'a, T, G>),
+    FirstChild(NodeRef<'a, T, G>),
+    NonFirstChildren(SiblingsNext<'a, T, G>),
+    MultileRootNodes(SiblingsNext<'a, T, G>),
 }
 
-impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
-    type Item = TraverseItem<'a, T, D, G>;
+impl<'a, T, G: Gen> Iterator for Traverse<'a, T, G> {
+    type Item = TraverseItem<'a, T, G>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -200,10 +200,10 @@ impl<'a, T, D, G: Gen> Iterator for Traverse<'a, T, D, G> {
     }
 }
 
-impl<'a, T, D, G: Gen> iter::FusedIterator for Traverse<'a, T, D, G> {}
+impl<'a, T, G: Gen> iter::FusedIterator for Traverse<'a, T, G> {}
 
-impl<'a, T, D, G: Gen> Traverse<'a, T, D, G> {
-    fn maybe_push_children(&mut self, node: &Node<T, D, G>) {
+impl<'a, T, G: Gen> Traverse<'a, T, G> {
+    fn maybe_push_children(&mut self, node: &Node<T, G>) {
         if let Some(child) = node.link.first_child() {
             self.states.push(TraverseState::FirstChild(NodeRef {
                 tree: self.tree,
@@ -214,7 +214,7 @@ impl<'a, T, D, G: Gen> Traverse<'a, T, D, G> {
         }
     }
 
-    fn push_siblings_of_first_child(&mut self, node: &Node<T, D, G>) {
+    fn push_siblings_of_first_child(&mut self, node: &Node<T, G>) {
         let siblings = SiblingsNext {
             next: node.link.next_sibling(),
             tree: self.tree,
