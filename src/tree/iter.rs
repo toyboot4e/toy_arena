@@ -1,6 +1,4 @@
-/*!
-Iterators types for the [`Tree`]
-*/
+//! Iterators types for the [`Tree`]
 
 use std::iter;
 

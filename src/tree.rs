@@ -1,12 +1,10 @@
-/*!
-Tree layered on top of the generational arena
-
-# Similar crates
-* [indextree](https://docs.rs/indextree/latest/indextree/)
-* [ego_tree](https://docs.rs/ego-tree/latest/ego_tree/)
-
-WARNING: This module **definitely** needs more tests!
-*/
+//! Tree layered on top of the generational arena
+//!
+//! # Similar crates
+//! * [indextree](https://docs.rs/indextree/latest/indextree/)
+//! * [ego_tree](https://docs.rs/ego-tree/latest/ego_tree/)
+//!
+//! WARNING: This module **definitely** needs more tests!
 
 // TODO: deep clone
 // TODO: directon type parameter
@@ -57,14 +55,13 @@ impl Gen for () {
     }
 }
 
-/**
-Tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting methods.
-
-# Implmentation note
-
-[`Tree`] doesn't have root node and the API is a bit similar to [`Arena`](crate::Arena). But wo
-could use an explicit root node, where `parent` of `Node` is always there (if it's not the root node).
-*/
+/// Tree layered on top of [`Arena`](crate::Arena). See [`NodeId`] for parenting methods.
+///
+/// # Implmentation note
+///
+/// [`Tree`] doesn't have root node and the API is a bit similar to [`Arena`](crate::Arena). But we
+/// could use an explicit root node, where `parent` of `Node` is always there (if it's not the root
+/// node).
 #[derive(Derivative)]
 #[derivative(
     Debug(bound = "T: Debug"),
@@ -386,25 +383,23 @@ impl<T, G: Gen> NodeId<T, G> {
     }
 }
 
-/**
-Creates a [`Tree`] with given hierarchy of value
-
-```
-use toy_arena::{tree, tree::Tree};
-
-let tree: Tree<usize> = tree! {
-    0,
-    1, {
-        10,
-        11, {
-            100,
-            101,
-        },
-        12,
-    },
-};
-```
-*/
+/// Creates a [`Tree`] with given hierarchy of value
+///
+/// ```
+/// use toy_arena::{tree, tree::Tree};
+///
+/// let tree: Tree<usize> = tree! {
+///     0,
+///     1, {
+///         10,
+///         11, {
+///             100,
+///             101,
+///         },
+///         12,
+///     },
+/// };
+/// ```
 #[macro_export]
 macro_rules! tree {
     ($($x:tt),* $(,)?) => {{

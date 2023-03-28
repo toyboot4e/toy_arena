@@ -1,9 +1,7 @@
-/*!
-Iterator types for the [`Arena`]
-
-[`EntryBindings`] is a special one, where we can `remove`, `invaliate` or `replace` the binded
-entries.
-*/
+//! Iterator types for the [`Arena`]
+//!
+//! [`EntryBindings`] is a special one, where we can `remove`, `invaliate` or `replace` the binded
+//! entries.
 
 use crate::*;
 

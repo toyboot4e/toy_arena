@@ -1,6 +1,4 @@
-/*!
-Try `cargo miri test` and if it detects UB
-*/
+//! Try `cargo miri test` and if it detects UB.
 
 use super::*;
 
