@@ -1,4 +1,4 @@
-//! Iterators types for the [`Tree`]
+//! Iterators types for the [`Tree`].
 
 use std::iter;
 
@@ -56,7 +56,7 @@ impl<'a, T, G: Gen> NodeRef<'a, T, G> {
         self.node().data()
     }
 
-    /// Nodes after this node
+    /// Nodes after this node.
     pub fn siblings(&self) -> SiblingsNext<'a, T, G> {
         SiblingsNext {
             next: self.node().link.next_sibling(),
@@ -64,7 +64,7 @@ impl<'a, T, G: Gen> NodeRef<'a, T, G> {
         }
     }
 
-    /// This node and nodes after this node
+    /// This node and nodes after this node.
     pub fn preorder(&self) -> SiblingsNext<'a, T, G> {
         SiblingsNext {
             next: Some(self.slot),

@@ -1,11 +1,11 @@
-//! Iterator types for the [`Arena`]
+//! Iterator types for the [`Arena`].
 //!
 //! [`EntryBindings`] is a special one, where we can `remove`, `invaliate` or `replace` the binded
 //! entries.
 
 use crate::*;
 
-/// [`Arena::drain`] → Iterator of `T`. Removes all arena items on drop
+/// [`Arena::drain`] → Iterator of `T`. Removes all arena items on drop.
 pub struct Drain<'a, T, G: Gen> {
     pub(crate) arena: &'a mut Arena<T, G>,
     pub(crate) slot: Slot,

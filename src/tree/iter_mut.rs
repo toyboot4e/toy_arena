@@ -1,4 +1,4 @@
-//! Iterators of mutable bindings of the [`Tree`] nodes
+//! Iterators of mutable bindings of the [`Tree`] nodes.
 
 use std::{cell::UnsafeCell, mem, rc::Rc};
 
@@ -33,7 +33,7 @@ impl<'a, T, G: Gen> Drop for TreeBindDrop<'a, T, G> {
 }
 
 impl<'a, T, G: Gen> TreeBind<'a, T, G> {
-    /// Take the tree and wrap it in `UnsafeCell`
+    /// Take the tree and wrap it in `UnsafeCell`.
     pub fn new(original: &'a mut Tree<T, G>) -> Self {
         let mut tree = Tree::new();
         mem::swap(original, &mut tree);
@@ -125,7 +125,7 @@ impl<'a, T, G: Gen> NodeMut<'a, T, G> {
         })
     }
 
-    /// Goes back to the first sibling
+    /// Goes back to the first sibling.
     pub fn first_sibling(&mut self) -> Option<Self> {
         let mut slot = self.slot;
 
@@ -139,7 +139,7 @@ impl<'a, T, G: Gen> NodeMut<'a, T, G> {
         })
     }
 
-    /// Goes forward to the last sibling
+    /// Goes forward to the last sibling.
     pub fn last_sibling(&mut self) -> Option<Self> {
         let mut slot = self.slot;
 
@@ -179,7 +179,7 @@ impl<'a, T, G: Gen> NodeMut<'a, T, G> {
         tree.nodes.remove_by_slot(self.slot);
     }
 
-    /// Removes subtree rooted by this node
+    /// Removes subtree rooted by this node.
     // NOTE: It doesn't mutate the node's siblings link!
     pub fn remove(mut self) {
         let link = unsafe { self.link().clone() };
@@ -208,7 +208,7 @@ impl<'a, T, G: Gen> NodeMut<'a, T, G> {
 
 /// # ---- Iterators ----
 impl<'a, T, G: Gen> NodeMut<'a, T, G> {
-    /// This node and nodes after this node
+    /// This node and nodes after this node.
     pub fn traverse_mut(&mut self) -> SiblingsMutNext<'a, T, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
@@ -216,7 +216,7 @@ impl<'a, T, G: Gen> NodeMut<'a, T, G> {
         }
     }
 
-    /// Nodes after this node
+    /// Nodes after this node.
     pub fn siblings_mut(&mut self) -> SiblingsMutNext<'a, T, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),
@@ -232,7 +232,7 @@ impl<'a, T, G: Gen> NodeMut<'a, T, G> {
     //     iter::Traverse { tree: self, states }
     // }
 
-    /// Children of this node
+    /// Children of this node.
     pub fn children_mut(&mut self) -> SiblingsMutNext<'a, T, G> {
         SiblingsMutNext {
             bind: self.bind.clone(),

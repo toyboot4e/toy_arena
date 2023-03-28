@@ -1,4 +1,4 @@
-//! Tree layered on top of the generational arena
+//! Tree layered on top of the generational arena.
 //!
 //! # Similar crates
 //! * [indextree](https://docs.rs/indextree/latest/indextree/)
@@ -185,12 +185,12 @@ impl<T, G: Gen> Node<T, G> {
         self.link.last_child()
     }
 
-    /// Returns reference to the internal data
+    /// Returns reference to the internal data.
     pub fn data(&self) -> &T {
         &self.token
     }
 
-    /// Returns mutable reference to the internal data
+    /// Returns mutable reference to the internal data.
     pub fn data_mut(&mut self) -> &mut T {
         &mut self.token
     }
@@ -218,12 +218,12 @@ impl<T, G: Gen> Tree<T, G> {
         self.nodes.contains(index)
     }
 
-    /// Number of items in this tree
+    /// Number of items in this tree.
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
-    /// The capacity of the backgin vec
+    /// The capacity of the backgin vec.
     pub fn capacity(&self) -> usize {
         self.nodes.capacity()
     }
@@ -231,37 +231,37 @@ impl<T, G: Gen> Tree<T, G> {
 
 /// # ----- Node accessors -----
 impl<T, G: Gen> Tree<T, G> {
-    /// Returns a reference to the node
+    /// Returns a reference to the node.
     pub fn node(&self, id: NodeId<T, G>) -> Option<&Node<T, G>> {
         self.nodes.get(id)
     }
 
-    /// Returns a mutable reference to the node
+    /// Returns a mutable reference to the node.
     pub fn node_mut(&mut self, id: NodeId<T, G>) -> Option<&mut Node<T, G>> {
         self.nodes.get_mut(id)
     }
 
-    /// Returns a reference to the node
+    /// Returns a reference to the node.
     pub fn node_by_slot(&self, slot: Slot) -> Option<&Node<T, G>> {
         self.nodes.get_by_slot(slot)
     }
 
-    /// Returns a mutable reference to the node
+    /// Returns a mutable reference to the node.
     pub fn node_mut_by_slot(&mut self, slot: Slot) -> Option<&mut Node<T, G>> {
         self.nodes.get_mut_by_slot(slot)
     }
 
-    /// Returns reference to the data in the node
+    /// Returns reference to the data in the node.
     pub fn data(&self, id: NodeId<T, G>) -> Option<&T> {
         self.nodes.get(id).map(Node::data)
     }
 
-    /// Returns mutable reference to the data in the node
+    /// Returns mutable reference to the data in the node.
     pub fn data_mut(&mut self, id: NodeId<T, G>) -> Option<&mut T> {
         self.nodes.get_mut(id).map(Node::data_mut)
     }
 
-    /// Appends a new data to the implicit root node
+    /// Appends a new data to the implicit root node.
     pub fn insert(&mut self, token: T) -> NodeId<T, G> {
         let node = Node::root(token);
         let id = self.nodes.insert(node);
@@ -285,7 +285,7 @@ impl<T, G: Gen> Tree<T, G> {
 
 /// # ----- Traversal terators -----
 impl<T, G: Gen> Tree<T, G> {
-    /// Sub tree rooted at the node (depth-first, preorder)
+    /// Sub tree rooted at the node (depth-first, preorder).
     pub fn subtree(&self, id: NodeId<T, G>) -> iter::Traverse<T, G> {
         let states = vec![iter::TraverseState::Parent(iter::NodeRef::new(
             id.slot, self,
@@ -293,7 +293,7 @@ impl<T, G: Gen> Tree<T, G> {
         iter::Traverse { tree: self, states }
     }
 
-    /// Sub trees rooted at this node and the siblings (depth-first, preorder)
+    /// Sub trees rooted at this node and the siblings (depth-first, preorder).
     pub fn traverse(&self, id: NodeId<T, G>) -> iter::Traverse<T, G> {
         let states = vec![iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
             next: Some(id.slot),
@@ -302,7 +302,7 @@ impl<T, G: Gen> Tree<T, G> {
         iter::Traverse { tree: self, states }
     }
 
-    /// Sub trees at the root
+    /// Sub trees at the root.
     pub fn traverse_root_nodes(&self) -> iter::Traverse<T, G> {
         let mut states = vec![];
         states.push(iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
@@ -315,7 +315,7 @@ impl<T, G: Gen> Tree<T, G> {
 
 /// # ----- Flat, non-recursive iterators -----
 impl<T, G: Gen> Tree<T, G> {
-    /// Sub trees rooted at siblings after this node (depth-first, preorder)
+    /// Sub trees rooted at siblings after this node (depth-first, preorder).
     pub fn siblings(&self, id: NodeId<T, G>) -> iter::Traverse<T, G> {
         let states = vec![iter::TraverseState::MultileRootNodes(iter::SiblingsNext {
             next: self.node(id).and_then(|n| n.link.next_sibling()),
@@ -324,7 +324,7 @@ impl<T, G: Gen> Tree<T, G> {
         iter::Traverse { tree: self, states }
     }
 
-    /// Children (depth-first, preorder)
+    /// Children (depth-first, preorder).
     pub fn children(&mut self, id: NodeId<T, G>) -> iter::SiblingsNext<T, G> {
         let first = self.node(id).and_then(|node| node.link.first_child());
         iter::SiblingsNext {
@@ -333,7 +333,7 @@ impl<T, G: Gen> Tree<T, G> {
         }
     }
 
-    /// Returns iterator of child node bindings
+    /// Returns iterator of child node bindings.
     pub fn children_mut(&mut self, id: NodeId<T, G>) -> iter_mut::SiblingsMutNext<T, G> {
         let first = self.node(id).and_then(|node| node.link.first_child());
         let bind = iter_mut::TreeBind::new(self);
@@ -347,7 +347,7 @@ impl<T, G: Gen> Tree<T, G> {
         }
     }
 
-    /// Returns iterator of child node bindings
+    /// Returns iterator of child node bindings.
     pub fn root_nodes_mut(&mut self) -> iter_mut::SiblingsMutNext<T, G> {
         let first = self.root.first_child();
         let bind = iter_mut::TreeBind::new(self);
@@ -370,7 +370,7 @@ impl<T, G: Gen> ops::IndexMut<NodeId<T, G>> for Tree<T, G> {
 
 /// # ---- Tree node impls -----
 impl<T, G: Gen> NodeId<T, G> {
-    /// Attaches a child to the node
+    /// Attaches a child to the node.
     pub fn attach(self, child: T, tree: &mut Tree<T, G>) -> Option<NodeId<T, G>> {
         if !tree.contains(self) {
             return None;

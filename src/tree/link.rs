@@ -1,12 +1,12 @@
-//! Link of tree node IDs
+//! Link of tree node IDs.
 
 use std::fmt;
 
 pub trait Tree {
-    /// usize or small size
+    /// `usize` or small size.
     type Slot: Default + Clone + PartialEq + fmt::Debug;
 
-    /// Slot with generation
+    /// Slot with generation.
     type Id: Id<Self::Slot> + Clone + fmt::Debug;
 
     fn root_mut(&mut self) -> &mut Link<Self::Slot>;
@@ -120,7 +120,7 @@ pub fn fix_siblings_on_remove<T: Tree>(link: &Link<T::Slot>, tree: &mut T) {
     }
 }
 
-/// On tree node insertion
+/// On tree node insertion.
 pub fn fix_root_on_insert<T: Tree>(tree: &mut T, id: T::Id) {
     let root = tree.root_mut();
 
@@ -148,7 +148,7 @@ pub fn fix_after_clean_children<S: Default>(link: &mut Link<S>) {
     link.clink = Default::default();
 }
 
-/// Fixes parent/child link on leaf node removal
+/// Fixes parent/child link on leaf node removal.
 pub(crate) fn fix_children_on_remove_leaf<T: Tree>(
     link: &Link<T::Slot>,
     child_slot: T::Slot,

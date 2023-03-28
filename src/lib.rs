@@ -1,4 +1,4 @@
-//! Generational arena with type indices.
+//! Generational [`Arena`] with type [`Index`].
 //!
 //! # Similar crates
 //! * [generational_arena](https://docs.rs/generational_arena/latest)
@@ -34,10 +34,10 @@ use derivative::Derivative;
 
 use crate::iter::*;
 
-/// Default generation type used by arena
+/// Default generation type used by arena.
 pub type DefaultGen = NonZeroU32;
 
-/// Generational arena with typed indices.
+/// Generational arena with typed [`Index`].
 ///
 /// It's basically a [`Vec`], but with fixed item positions.
 #[derive(Derivative)]
@@ -181,8 +181,8 @@ impl<T, G: Gen> Index<T, G> {
 
 type RawSlot = u32;
 
-/// Index of the backing `Vec` in [`Arena`]. It can be [upgraded](`Arena::upgrade`) to [`Index`],
-/// but prefer mutable iterators to slot-based iteration.
+/// Raw index of the backing `Vec` in [`Arena`]. It can be [upgraded](`Arena::upgrade`) to
+/// [`Index`], but prefer mutable iterators for slot-based iteration.
 #[derive(Copy, Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "igri", derive(Inspect))]
 #[repr(transparent)]
@@ -205,7 +205,7 @@ impl fmt::Display for Slot {
 impl Slot {
     pub const ZERO: Self = Self { raw: 0 };
 
-    /// Creates slot from raw value
+    /// Creates slot from raw value.
     pub fn from_raw(raw: RawSlot) -> Self {
         Self { raw }
     }
@@ -218,7 +218,7 @@ impl Slot {
         self.raw as usize
     }
 
-    /// NOTE: Slot is also used to track arena length
+    /// NOTE: Slot is also used to track arena length.
     fn inc_mut(&mut self) {
         self.raw = self
             .raw
@@ -226,7 +226,7 @@ impl Slot {
             .unwrap_or_else(|| panic!("arena slot overflow"));
     }
 
-    /// NOTE: Slot is also used to track arena length
+    /// NOTE: Slot is also used to track arena length.
     fn dec_mut(&mut self) {
         self.raw = self
             .raw
@@ -235,7 +235,7 @@ impl Slot {
     }
 }
 
-/// Generation type, one of the unsized `NonZero` types in [`std::num`]
+/// Generation type, one of the unsized `NonZero` types in [`std::num`].
 ///
 /// Generation of the first item at a slot is always `2` (since it's using `NonZero` type and we'll
 /// always increase the generation on creating new value).
@@ -310,13 +310,13 @@ impl<T, G: Gen> Arena<T, G> {
         }
     }
 
-    /// Number of items in this arena
+    /// Number of items in this arena.
     pub fn len(&self) -> usize {
         let slot_states = unsafe { &*self.slot_states.get() };
         slot_states.n_items.to_usize()
     }
 
-    /// Capacity of the backing vec
+    /// Capacity of the backing vec.
     pub fn capacity(&self) -> usize {
         self.entries.capacity()
     }
@@ -358,7 +358,7 @@ impl<T, G: Gen> Arena<T, G> {
         }
     }
 
-    /// Returns some item if the generation matchesA. Returns none on mismatch or no data
+    /// Returns some item if the generation matchesA. Returns none on mismatch or no data.
     pub fn remove(&mut self, index: Index<T, G>) -> Option<T> {
         let entry = &mut self.entries[index.slot.to_usize()];
         if entry.gen != index.gen || entry.data.is_none() {
@@ -383,13 +383,13 @@ impl<T, G: Gen> Arena<T, G> {
         ))
     }
 
-    /// Returns none if the generation matches. Returns some index on mismatch or no data
+    /// Returns none if the generation matches. Returns some index on mismatch or no data.
     pub fn invalidate(&mut self, index: Index<T, G>) -> Option<Index<T, G>> {
         let entry = &mut self.entries[index.slot.to_usize()];
         self::invalidate(entry, self.slot_states.get_mut().deref_mut(), index)
     }
 
-    /// Inalidates given index. Returns some index on updating the generation
+    /// Inalidates given index. Returns some index on updating the generation.
     pub fn invalidate_indices(&mut self, index: Index<T, G>) -> Option<Index<T, G>> {
         let entry = &mut self.entries[index.slot.to_usize()];
         if index.gen == entry.gen && entry.data.is_some() {
@@ -438,7 +438,7 @@ impl<T, G: Gen> Arena<T, G> {
         }
     }
 
-    /// NOTE: After extending, len < capacity
+    /// NOTE: After extending, len < capacity.
     fn extend(&mut self, new_cap: usize) {
         debug_assert!(self.entries.capacity() < new_cap);
         debug_assert!((new_cap as RawSlot) < RawSlot::MAX);
@@ -453,7 +453,7 @@ impl<T, G: Gen> Arena<T, G> {
         }
     }
 
-    /// Removes all items that don't satisfy the predicate
+    /// Removes all items that don't satisfy the predicate.
     pub fn retain<F: FnMut(Index<T, G>, &mut T) -> bool>(&mut self, mut pred: F) {
         let mut i = 0;
         while i < self.entries.len() {
@@ -479,7 +479,7 @@ impl<T, G: Gen> Arena<T, G> {
     }
 }
 
-/// Borrows arena partially
+/// Borrows arena partially.
 pub(crate) fn remove_binded<T, G: Gen>(
     entry: &mut Entry<T, G>,
     slot_states: &mut SlotStates,
@@ -492,7 +492,7 @@ pub(crate) fn remove_binded<T, G: Gen>(
     taken
 }
 
-/// Borrows arena partially
+/// Borrows arena partially.
 pub(crate) fn invalidate<T, G: Gen>(
     entry: &mut Entry<T, G>,
     slot_states: &mut SlotStates,
@@ -509,7 +509,7 @@ pub(crate) fn invalidate<T, G: Gen>(
     }
 }
 
-/// Borrows arena partially
+/// Borrows arena partially.
 pub(crate) fn replace_binded<T, G: Gen>(
     entry: &mut Entry<T, G>,
     slot: Slot,
@@ -580,7 +580,7 @@ impl<T, G: Gen> Arena<T, G> {
         })
     }
 
-    /// Upgrades slot to `Index`. Prefer [`Arena::bindings`] when possible
+    /// Upgrades slot to `Index`. Prefer [`Arena::bindings`] when possible.
     pub fn upgrade(&self, slot: Slot) -> Option<Index<T, G>> {
         if slot.to_usize() >= self.entries.len() {
             return None;
@@ -595,17 +595,17 @@ impl<T, G: Gen> Arena<T, G> {
         })
     }
 
-    /// Internal use only
+    /// Internal use only.
     pub(crate) fn get_by_slot(&self, slot: Slot) -> Option<&T> {
         self.entries.get(slot.to_usize())?.data.as_ref()
     }
 
-    /// Internal use only
+    /// Internal use only.
     pub(crate) fn get_mut_by_slot(&mut self, slot: Slot) -> Option<&mut T> {
         self.entries.get_mut(slot.to_usize())?.data.as_mut()
     }
 
-    /// Internal use only
+    /// Internal use only.
     pub(crate) fn get2_mut_by_slot(&mut self, s1: Slot, s2: Slot) -> Option<(&mut T, &mut T)> {
         debug_assert_ne!(s1, s2);
         let x1 = self.get_mut_by_slot(s1)? as *mut _;
@@ -652,7 +652,7 @@ impl<T, G: Gen> Arena<T, G> {
         }
     }
 
-    /// `T`. Removes all items on drop
+    /// `T`. Removes all items on drop.
     pub fn drain(&mut self) -> Drain<T, G> {
         Drain {
             arena: self,
@@ -660,7 +660,7 @@ impl<T, G: Gen> Arena<T, G> {
         }
     }
 
-    /// See [`EntryBindings`] and [`EntryBind`]
+    /// See [`EntryBindings`] and [`EntryBind`].
     pub fn bindings(&mut self) -> EntryBindings<T, G> {
         EntryBindings::new(self)
     }
